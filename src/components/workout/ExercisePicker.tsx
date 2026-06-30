@@ -16,6 +16,12 @@ import {
   type Category,
   type EquipmentType,
 } from '@/lib/categories';
+import {
+  TRACKING_TYPES,
+  TRACKING_TYPE_LABELS,
+  inferTrackingType,
+  type TrackingType,
+} from '@/lib/exerciseMetrics';
 import { useCreateExercise, useDeleteExercise, useExercises } from '@/hooks/useExercises';
 import type { ExerciseRow } from '@/types/workout';
 
@@ -35,6 +41,7 @@ export function ExercisePicker({ open, onClose, onSelect }: ExercisePickerProps)
   const [query, setQuery] = useState('');
   const [newCategory, setNewCategory] = useState<Category>('other');
   const [newEquipment, setNewEquipment] = useState<EquipmentType>('machine');
+  const [newTracking, setNewTracking] = useState<TrackingType>('weight_reps');
   const [error, setError] = useState<string | null>(null);
 
   const trimmed = query.trim();
@@ -64,6 +71,7 @@ export function ExercisePicker({ open, onClose, onSelect }: ExercisePickerProps)
         name: trimmed,
         category: newCategory,
         equipmentType: newEquipment,
+        trackingType: newTracking,
       });
       reset();
       onSelect(created);
@@ -85,6 +93,7 @@ export function ExercisePicker({ open, onClose, onSelect }: ExercisePickerProps)
     setQuery('');
     setNewCategory('other');
     setNewEquipment('machine');
+    setNewTracking('weight_reps');
   };
 
   const close = () => {
@@ -115,7 +124,11 @@ export function ExercisePicker({ open, onClose, onSelect }: ExercisePickerProps)
               <Select
                 aria-label="Category"
                 value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value as Category)}
+                onChange={(e) => {
+                  const c = e.target.value as Category;
+                  setNewCategory(c);
+                  setNewTracking(inferTrackingType(c, newEquipment, trimmed));
+                }}
               >
                 {CATEGORIES.map((c) => (
                   <option key={c} value={c}>
@@ -126,11 +139,31 @@ export function ExercisePicker({ open, onClose, onSelect }: ExercisePickerProps)
               <Select
                 aria-label="Equipment"
                 value={newEquipment}
-                onChange={(e) => setNewEquipment(e.target.value as EquipmentType)}
+                onChange={(e) => {
+                  const eq = e.target.value as EquipmentType;
+                  setNewEquipment(eq);
+                  setNewTracking(inferTrackingType(newCategory, eq, trimmed));
+                }}
               >
                 {EQUIPMENT_TYPES.map((eq) => (
                   <option key={eq} value={eq}>
                     {EQUIPMENT_LABELS[eq]}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="mt-3">
+              <label className="mb-1 block text-xs font-medium text-iron-500 dark:text-iron-400">
+                Tracks
+              </label>
+              <Select
+                aria-label="Tracking type"
+                value={newTracking}
+                onChange={(e) => setNewTracking(e.target.value as TrackingType)}
+              >
+                {TRACKING_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {TRACKING_TYPE_LABELS[t]}
                   </option>
                 ))}
               </Select>

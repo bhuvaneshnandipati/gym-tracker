@@ -1,4 +1,5 @@
 import type { Category, EquipmentType, WeightUnit } from '@/lib/categories';
+import type { TrackingType } from '@/lib/exerciseMetrics';
 
 /** A row from public.exercises. */
 export interface ExerciseRow {
@@ -7,6 +8,7 @@ export interface ExerciseRow {
   name: string;
   category: Category;
   equipment_type: EquipmentType;
+  tracking_type: TrackingType;
   is_custom: boolean;
   created_at: string;
 }
@@ -33,6 +35,7 @@ export interface WorkoutExerciseRow {
   category: Category;
   equipment_type: EquipmentType;
   weight_unit: WeightUnit;
+  tracking_type: TrackingType;
   notes: string | null;
   position: number;
   created_at: string;
@@ -44,6 +47,11 @@ export interface SetRow {
   workout_exercise_id: string;
   weight: number | null;
   reps: number | null;
+  duration_seconds: number | null;
+  distance: number | null;
+  speed: number | null;
+  incline: number | null;
+  calories: number | null;
   completed: boolean;
   position: number;
   created_at: string;

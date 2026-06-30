@@ -20,23 +20,89 @@ import {
   frequencyByMonth,
   frequencyByWeek,
   prTimeline,
+  trackingTypeFor,
   volumeOverTime,
   compactDateLabel,
+  type ExerciseSession,
   type LabeledPoint,
 } from '@/utils/progress';
-import { formatDuration } from '@/utils/datetime';
+import { formatDuration, formatClock } from '@/utils/datetime';
 import { formatNumber, formatVolume } from '@/utils/number';
+import { isStrength, type TrackingType } from '@/lib/exerciseMetrics';
 import { cn } from '@/utils/cn';
 
 type FreqMode = 'week' | 'month';
-type Metric = 'weight' | 'e1rm' | 'volume' | 'reps';
 
-const METRIC_LABELS: Record<Metric, string> = {
-  weight: 'Top weight',
-  e1rm: 'Est. 1RM',
-  volume: 'Volume',
-  reps: 'Total reps',
-};
+interface MetricOption {
+  key: string;
+  label: string;
+  value: (s: ExerciseSession) => number;
+  format: (v: number) => string;
+}
+
+/** Metric choices for the per-exercise chart, by tracking type. */
+function metricOptions(trackingType: TrackingType, unit: string): MetricOption[] {
+  switch (trackingType) {
+    case 'reps':
+      return [
+        { key: 'reps', label: 'Total reps', value: (s) => s.totalReps, format: (v) => `${v} reps` },
+        { key: 'sets', label: 'Sets', value: (s) => s.setCount, format: (v) => `${v} sets` },
+      ];
+    case 'duration':
+      return [
+        {
+          key: 'duration',
+          label: 'Duration',
+          value: (s) => s.durationSeconds,
+          format: (v) => formatClock(v),
+        },
+      ];
+    case 'cardio':
+      return [
+        {
+          key: 'duration',
+          label: 'Duration',
+          value: (s) => Math.round(s.durationSeconds / 60),
+          format: (v) => `${v} min`,
+        },
+        {
+          key: 'distance',
+          label: 'Distance',
+          value: (s) => s.distance,
+          format: (v) => `${formatNumber(v, 1)} mi`,
+        },
+        {
+          key: 'calories',
+          label: 'Calories',
+          value: (s) => s.calories,
+          format: (v) => `${v} kcal`,
+        },
+      ];
+    case 'weight_reps':
+    default:
+      return [
+        {
+          key: 'e1rm',
+          label: 'Est. 1RM',
+          value: (s) => Math.round(s.bestOneRepMax),
+          format: (v) => `${formatNumber(v)} ${unit}`,
+        },
+        {
+          key: 'weight',
+          label: 'Top weight',
+          value: (s) => Math.round(s.topWeight),
+          format: (v) => `${formatNumber(v)} ${unit}`,
+        },
+        {
+          key: 'volume',
+          label: 'Volume',
+          value: (s) => Math.round(s.volume),
+          format: (v) => formatVolume(v, unit),
+        },
+        { key: 'reps', label: 'Total reps', value: (s) => s.totalReps, format: (v) => `${v} reps` },
+      ];
+  }
+}
 
 export function ProgressPage() {
   const navigate = useNavigate();
@@ -45,7 +111,7 @@ export function ProgressPage() {
   const { data: workouts, isLoading, isError } = useWorkouts();
 
   const [freqMode, setFreqMode] = useState<FreqMode>('week');
-  const [metric, setMetric] = useState<Metric>('e1rm');
+  const [metricKey, setMetricKey] = useState<string>('');
   const [exercise, setExercise] = useState<string>('');
 
   const names = useMemo(() => exerciseNames(workouts ?? []), [workouts]);
@@ -67,22 +133,20 @@ export function ProgressPage() {
     () => (selected ? exerciseSummary(workouts ?? [], selected) : null),
     [workouts, selected],
   );
+  const trackingType = useMemo(
+    () => (selected ? trackingTypeFor(workouts ?? [], selected) : 'weight_reps'),
+    [workouts, selected],
+  );
+
+  const options = useMemo(() => metricOptions(trackingType, unit), [trackingType, unit]);
+  const activeOption = options.find((o) => o.key === metricKey) ?? options[0];
 
   const metricSeries: LabeledPoint[] = useMemo(() => {
+    if (!activeOption) return [];
     return sessions
-      .map((s) => {
-        const value =
-          metric === 'weight'
-            ? Math.round(s.topWeight)
-            : metric === 'e1rm'
-              ? Math.round(s.bestOneRepMax)
-              : metric === 'volume'
-                ? Math.round(s.volume)
-                : s.totalReps;
-        return { label: compactDateLabel(s.date), value };
-      })
+      .map((s) => ({ label: compactDateLabel(s.date), value: activeOption.value(s) }))
       .filter((p) => p.value > 0);
-  }, [sessions, metric]);
+  }, [sessions, activeOption]);
 
   const prSeries = useMemo(() => prTimeline(sessions), [sessions]);
 
@@ -152,7 +216,7 @@ export function ProgressPage() {
             <ChartCard
               title="Personal record timeline"
               empty={prSeries.length < 2}
-              emptyText="Two+ sessions of the selected exercise are needed."
+              emptyText="Pick a weight-based exercise with two or more sessions."
             >
               <LineSeries data={prSeries} valueFormatter={(v) => `${formatNumber(v)} ${unit}`} />
             </ChartCard>
@@ -168,7 +232,13 @@ export function ProgressPage() {
                 </h2>
               </div>
               <div className="w-full sm:w-64">
-                <Select value={selected} onChange={(e) => setExercise(e.target.value)}>
+                <Select
+                  value={selected}
+                  onChange={(e) => {
+                    setExercise(e.target.value);
+                    setMetricKey(''); // reset to the first relevant metric
+                  }}
+                >
                   {names.map((n) => (
                     <option key={n} value={n}>
                       {n}
@@ -181,64 +251,90 @@ export function ProgressPage() {
             {summary ? (
               <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
                 <MiniStat label="Sessions" value={formatNumber(summary.sessions)} />
-                <MiniStat
-                  label="Personal record"
-                  value={
-                    summary.pr
-                      ? `${formatNumber(summary.pr.weight)} ${summary.unit} × ${summary.pr.reps}`
-                      : '—'
-                  }
-                />
-                <MiniStat
-                  label="Best est. 1RM"
-                  value={
-                    summary.bestOneRepMax > 0
-                      ? `${formatNumber(Math.round(summary.bestOneRepMax))} ${summary.unit}`
-                      : '—'
-                  }
-                />
-                <MiniStat
-                  label="Avg weight"
-                  value={
-                    summary.avgWeight != null
-                      ? `${formatNumber(Math.round(summary.avgWeight))} ${summary.unit}`
-                      : '—'
-                  }
-                />
-                <MiniStat
-                  label="Avg reps"
-                  value={summary.avgReps != null ? formatNumber(Math.round(summary.avgReps)) : '—'}
-                />
-                <MiniStat
-                  label="Total volume"
-                  value={formatVolume(summary.totalVolume, summary.unit)}
-                />
+                {isStrength(trackingType) ? (
+                  <>
+                    <MiniStat
+                      label="Personal record"
+                      value={
+                        summary.pr
+                          ? `${formatNumber(summary.pr.weight)} ${summary.unit} × ${summary.pr.reps}`
+                          : '—'
+                      }
+                    />
+                    <MiniStat
+                      label="Best est. 1RM"
+                      value={
+                        summary.bestOneRepMax > 0
+                          ? `${formatNumber(Math.round(summary.bestOneRepMax))} ${summary.unit}`
+                          : '—'
+                      }
+                    />
+                    <MiniStat
+                      label="Avg weight"
+                      value={
+                        summary.avgWeight != null
+                          ? `${formatNumber(Math.round(summary.avgWeight))} ${summary.unit}`
+                          : '—'
+                      }
+                    />
+                    <MiniStat
+                      label="Avg reps"
+                      value={
+                        summary.avgReps != null ? formatNumber(Math.round(summary.avgReps)) : '—'
+                      }
+                    />
+                    <MiniStat
+                      label="Total volume"
+                      value={formatVolume(summary.totalVolume, summary.unit)}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <MiniStat
+                      label="Total time"
+                      value={formatClock(sessions.reduce((t, s) => t + s.durationSeconds, 0))}
+                    />
+                    {trackingType === 'cardio' ? (
+                      <>
+                        <MiniStat
+                          label="Total distance"
+                          value={`${formatNumber(
+                            sessions.reduce((t, s) => t + s.distance, 0),
+                            1,
+                          )} mi`}
+                        />
+                        <MiniStat
+                          label="Total calories"
+                          value={formatNumber(sessions.reduce((t, s) => t + s.calories, 0))}
+                        />
+                      </>
+                    ) : (
+                      <MiniStat
+                        label="Total reps"
+                        value={formatNumber(sessions.reduce((t, s) => t + s.totalReps, 0))}
+                      />
+                    )}
+                  </>
+                )}
               </div>
             ) : null}
 
             <ChartCard
-              title={`${selected} — ${METRIC_LABELS[metric]}`}
+              title={`${selected} — ${activeOption?.label ?? ''}`}
               action={
-                <Segmented
-                  options={(Object.keys(METRIC_LABELS) as Metric[]).map((m) => ({
-                    value: m,
-                    label: METRIC_LABELS[m],
-                  }))}
-                  value={metric}
-                  onChange={(v) => setMetric(v as Metric)}
-                />
+                options.length > 1 ? (
+                  <Segmented
+                    options={options.map((o) => ({ value: o.key, label: o.label }))}
+                    value={activeOption?.key ?? ''}
+                    onChange={(v) => setMetricKey(v)}
+                  />
+                ) : null
               }
               empty={metricSeries.length < 1}
             >
               <LineSeries
                 data={metricSeries}
-                valueFormatter={(v) =>
-                  metric === 'reps'
-                    ? `${v} reps`
-                    : metric === 'volume'
-                      ? formatVolume(v, summary?.unit ?? unit)
-                      : `${formatNumber(v)} ${summary?.unit ?? unit}`
-                }
+                valueFormatter={(v) => activeOption?.format(v) ?? String(v)}
               />
             </ChartCard>
           </div>

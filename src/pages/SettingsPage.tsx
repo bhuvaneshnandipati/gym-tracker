@@ -134,7 +134,7 @@ export function SettingsPage() {
               </div>
               <div className="flex justify-between">
                 <dt className="text-iron-500 dark:text-iron-400">Version</dt>
-                <dd className="font-medium text-iron-800 dark:text-iron-200">0.6.0</dd>
+                <dd className="font-medium text-iron-800 dark:text-iron-200">1.1.0</dd>
               </div>
             </dl>
           </div>

@@ -13,6 +13,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Textarea } from '@/components/ui/Textarea';
 import { CATEGORY_BADGE, CATEGORY_LABELS, type WeightUnit } from '@/lib/categories';
+import { metricFields, type MetricKey } from '@/lib/exerciseMetrics';
 import type { DraftExercise } from '@/hooks/useWorkoutDraft';
 import { cn } from '@/utils/cn';
 
@@ -27,7 +28,7 @@ interface ExerciseCardProps {
   onSetNotes: (notes: string) => void;
   onAddSet: () => void;
   onRemoveSet: (setKey: string) => void;
-  onSetField: (setKey: string, field: 'weight' | 'reps', value: string) => void;
+  onSetField: (setKey: string, field: MetricKey, value: string) => void;
 }
 
 export function ExerciseCard({
@@ -45,6 +46,12 @@ export function ExerciseCard({
 }: ExerciseCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showNotes, setShowNotes] = useState(Boolean(exercise.notes));
+
+  const fields = metricFields(exercise.trackingType, exercise.name, exercise.weightUnit);
+  const showUnitToggle = fields.some((f) => f.key === 'weight');
+
+  // Grid: a fixed "Set" column, one column per metric, and a remove button.
+  const gridTemplate = `2rem repeat(${fields.length}, minmax(0, 1fr)) 2rem`;
 
   return (
     <Card className="p-4">
@@ -64,24 +71,25 @@ export function ExerciseCard({
         </div>
 
         <div className="flex items-center gap-1">
-          {/* Unit toggle */}
-          <div className="mr-1 inline-flex overflow-hidden rounded-lg border border-iron-200 text-xs dark:border-iron-700">
-            {(['lbs', 'kg'] as WeightUnit[]).map((u) => (
-              <button
-                key={u}
-                type="button"
-                onClick={() => onSetUnit(u)}
-                className={cn(
-                  'px-2 py-1 font-medium transition-colors',
-                  exercise.weightUnit === u
-                    ? 'bg-flame-600 text-white'
-                    : 'text-iron-500 hover:bg-iron-100 dark:hover:bg-iron-800',
-                )}
-              >
-                {u}
-              </button>
-            ))}
-          </div>
+          {showUnitToggle ? (
+            <div className="mr-1 inline-flex overflow-hidden rounded-lg border border-iron-200 text-xs dark:border-iron-700">
+              {(['lbs', 'kg'] as WeightUnit[]).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => onSetUnit(u)}
+                  className={cn(
+                    'px-2 py-1 font-medium transition-colors',
+                    exercise.weightUnit === u
+                      ? 'bg-flame-600 text-white'
+                      : 'text-iron-500 hover:bg-iron-100 dark:hover:bg-iron-800',
+                  )}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           <div className="relative">
             <button
@@ -168,36 +176,40 @@ export function ExerciseCard({
 
       {/* Sets */}
       <div className="mt-4">
-        <div className="mb-1 grid grid-cols-[2rem_1fr_1fr_2rem] items-center gap-2 px-1 text-xs font-medium text-iron-400">
+        <div
+          className="mb-1 grid items-center gap-2 px-1 text-xs font-medium text-iron-400"
+          style={{ gridTemplateColumns: gridTemplate }}
+        >
           <span>Set</span>
-          <span>Weight ({exercise.weightUnit})</span>
-          <span>Reps</span>
+          {fields.map((f) => (
+            <span key={f.key} className="truncate">
+              {f.label}
+            </span>
+          ))}
           <span />
         </div>
         <div className="space-y-2">
           {exercise.sets.map((set, i) => (
-            <div key={set.key} className="grid grid-cols-[2rem_1fr_1fr_2rem] items-center gap-2">
+            <div
+              key={set.key}
+              className="grid items-center gap-2"
+              style={{ gridTemplateColumns: gridTemplate }}
+            >
               <span className="text-center text-sm font-semibold text-iron-400">{i + 1}</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="0.5"
-                placeholder="0"
-                value={set.weight}
-                onChange={(e) => onSetField(set.key, 'weight', e.target.value)}
-                className="h-10 w-full rounded-lg border border-iron-300 bg-white px-3 text-sm tabular-nums text-iron-900 focus:border-flame-500 focus:outline-none focus:ring-2 focus:ring-flame-500/40 dark:border-iron-700 dark:bg-iron-900 dark:text-iron-100"
-              />
-              <input
-                type="number"
-                inputMode="numeric"
-                min="0"
-                step="1"
-                placeholder="0"
-                value={set.reps}
-                onChange={(e) => onSetField(set.key, 'reps', e.target.value)}
-                className="h-10 w-full rounded-lg border border-iron-300 bg-white px-3 text-sm tabular-nums text-iron-900 focus:border-flame-500 focus:outline-none focus:ring-2 focus:ring-flame-500/40 dark:border-iron-700 dark:bg-iron-900 dark:text-iron-100"
-              />
+              {fields.map((f) => (
+                <input
+                  key={f.key}
+                  type="number"
+                  inputMode={f.kind === 'int' ? 'numeric' : 'decimal'}
+                  min="0"
+                  step={f.step}
+                  placeholder={f.placeholder}
+                  aria-label={`${f.label} for set ${i + 1}`}
+                  value={set.values[f.key]}
+                  onChange={(e) => onSetField(set.key, f.key, e.target.value)}
+                  className="h-10 w-full rounded-lg border border-iron-300 bg-white px-3 text-sm tabular-nums text-iron-900 focus:border-flame-500 focus:outline-none focus:ring-2 focus:ring-flame-500/40 dark:border-iron-700 dark:bg-iron-900 dark:text-iron-100"
+                />
+              ))}
               <button
                 type="button"
                 onClick={() => onRemoveSet(set.key)}

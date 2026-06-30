@@ -21,6 +21,7 @@ const sample: WorkoutWithExercises = {
       category: 'legs',
       equipment_type: 'machine',
       weight_unit: 'lbs',
+      tracking_type: 'weight_reps',
       notes: 'Seat 4',
       position: 0,
       created_at: '2026-06-01T00:00:00Z',
@@ -30,6 +31,11 @@ const sample: WorkoutWithExercises = {
           workout_exercise_id: 'we1',
           weight: 220,
           reps: 12,
+          duration_seconds: null,
+          distance: null,
+          speed: null,
+          incline: null,
+          calories: null,
           completed: true,
           position: 0,
           created_at: '2026-06-01T00:00:00Z',
@@ -39,6 +45,11 @@ const sample: WorkoutWithExercises = {
           workout_exercise_id: 'we1',
           weight: 240,
           reps: 10,
+          duration_seconds: null,
+          distance: null,
+          speed: null,
+          incline: null,
+          calories: null,
           completed: true,
           position: 1,
           created_at: '2026-06-01T00:00:00Z',
@@ -77,8 +88,24 @@ describe('parseWorkoutsCSV round-trip', () => {
     expect(ex.equipmentType).toBe('machine');
     expect(ex.weightUnit).toBe('lbs');
     expect(ex.sets).toEqual([
-      { weight: 220, reps: 12 },
-      { weight: 240, reps: 10 },
+      {
+        weight: 220,
+        reps: 12,
+        durationSeconds: null,
+        distance: null,
+        speed: null,
+        incline: null,
+        calories: null,
+      },
+      {
+        weight: 240,
+        reps: 10,
+        durationSeconds: null,
+        distance: null,
+        speed: null,
+        incline: null,
+        calories: null,
+      },
     ]);
   });
 

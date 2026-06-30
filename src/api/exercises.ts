@@ -1,5 +1,6 @@
 import { getSupabase } from '@/lib/supabase';
 import type { Category, EquipmentType } from '@/lib/categories';
+import type { TrackingType } from '@/lib/exerciseMetrics';
 import type { ExerciseRow } from '@/types/workout';
 
 /** Built-in exercises (RLS-visible to all) plus the current user's custom ones. */
@@ -18,6 +19,7 @@ export interface CreateExerciseInput {
   name: string;
   category: Category;
   equipmentType: EquipmentType;
+  trackingType: TrackingType;
 }
 
 export async function createCustomExercise(input: CreateExerciseInput): Promise<ExerciseRow> {
@@ -34,6 +36,7 @@ export async function createCustomExercise(input: CreateExerciseInput): Promise<
       name: input.name.trim(),
       category: input.category,
       equipment_type: input.equipmentType,
+      tracking_type: input.trackingType,
       is_custom: true,
     })
     .select('*')

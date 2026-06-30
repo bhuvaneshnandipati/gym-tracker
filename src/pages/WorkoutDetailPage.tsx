@@ -10,16 +10,131 @@ import { FullPageSpinner } from '@/components/FullPageSpinner';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkout, useDeleteWorkout, useDuplicateWorkout } from '@/hooks/useWorkouts';
-import { CATEGORY_BADGE, CATEGORY_LABELS } from '@/lib/categories';
-import { formatDateLong, formatDuration } from '@/utils/datetime';
+import { CATEGORY_BADGE, CATEGORY_LABELS, type WeightUnit } from '@/lib/categories';
+import { metricKeysFor, isStrength, type MetricKey } from '@/lib/exerciseMetrics';
+import { formatDateLong, formatDuration, formatClock } from '@/utils/datetime';
 import { formatNumber, formatVolume } from '@/utils/number';
 import { setVolume, workoutVolume, workoutSetCount, estimateOneRepMax } from '@/utils/stats';
+import type { SetRow, WorkoutExerciseWithSets } from '@/types/workout';
+
+function headerLabel(key: MetricKey, unit: WeightUnit): string {
+  switch (key) {
+    case 'weight':
+      return `Weight (${unit})`;
+    case 'reps':
+      return 'Reps';
+    case 'duration':
+      return 'Duration';
+    case 'distance':
+      return 'Distance (mi)';
+    case 'speed':
+      return 'Speed (mph)';
+    case 'incline':
+      return 'Incline (%)';
+    case 'calories':
+      return 'Calories';
+    default:
+      return key;
+  }
+}
+
+function cellValue(set: SetRow, key: MetricKey): string {
+  switch (key) {
+    case 'weight':
+      return set.weight != null ? formatNumber(set.weight) : '—';
+    case 'reps':
+      return set.reps != null ? String(set.reps) : '—';
+    case 'duration':
+      return formatClock(set.duration_seconds);
+    case 'distance':
+      return set.distance != null ? formatNumber(set.distance, 1) : '—';
+    case 'speed':
+      return set.speed != null ? formatNumber(set.speed, 1) : '—';
+    case 'incline':
+      return set.incline != null ? formatNumber(set.incline, 1) : '—';
+    case 'calories':
+      return set.calories != null ? String(set.calories) : '—';
+    default:
+      return '—';
+  }
+}
+
+function ExerciseBlock({ ex }: { ex: WorkoutExerciseWithSets }) {
+  const strength = isStrength(ex.tracking_type);
+  const keys = metricKeysFor(ex.tracking_type, ex.name);
+  const exVolume = ex.sets.reduce((s, set) => s + setVolume(set), 0);
+  const best = strength
+    ? ex.sets
+        .filter((s) => s.weight != null && s.reps != null && s.weight > 0 && s.reps > 0)
+        .map((s) => estimateOneRepMax(s.weight as number, s.reps as number))
+        .reduce((m, v) => Math.max(m, v), 0)
+    : 0;
+
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="font-semibold tracking-tight text-iron-900 dark:text-iron-50">
+            {ex.name}
+          </h3>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <Badge className={CATEGORY_BADGE[ex.category]}>{CATEGORY_LABELS[ex.category]}</Badge>
+            {best > 0 ? (
+              <span className="text-xs text-iron-400">
+                Est. 1RM {formatNumber(Math.round(best))} {ex.weight_unit}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        {strength && exVolume > 0 ? (
+          <span className="shrink-0 text-sm tabular-nums text-iron-500 dark:text-iron-400">
+            {formatVolume(exVolume, ex.weight_unit)}
+          </span>
+        ) : null}
+      </div>
+
+      {ex.notes ? (
+        <p className="mt-2 text-sm text-iron-500 dark:text-iron-400">{ex.notes}</p>
+      ) : null}
+
+      <div className="mt-3 overflow-x-auto rounded-xl border border-iron-100 dark:border-iron-800">
+        <table className="w-full min-w-[18rem] text-sm">
+          <thead className="bg-iron-50 text-xs text-iron-500 dark:bg-iron-800/50 dark:text-iron-400">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">Set</th>
+              {keys.map((k) => (
+                <th key={k} className="px-3 py-2 text-right font-medium">
+                  {headerLabel(k, ex.weight_unit)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-iron-100 dark:divide-iron-800">
+            {ex.sets.map((set, i) => (
+              <tr key={set.id}>
+                <td className="px-3 py-2 font-semibold text-iron-400">{i + 1}</td>
+                {keys.map((k) => (
+                  <td
+                    key={k}
+                    className="px-3 py-2 text-right tabular-nums text-iron-800 dark:text-iron-200"
+                  >
+                    {cellValue(set, k)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
 
 export function WorkoutDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const unit = profile?.weight_unit ?? 'lbs';
+  const unit: WeightUnit = profile?.weight_unit ?? 'lbs';
 
   const { data: workout, isLoading, isError } = useWorkout(id);
   const deleteWorkout = useDeleteWorkout();
@@ -87,7 +202,6 @@ export function WorkoutDetailPage() {
         }
       />
 
-      {/* Summary */}
       <Card className="mb-4">
         <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
           <Stat icon={Timer} label="Duration" value={formatDuration(workout.duration_seconds)} />
@@ -112,73 +226,10 @@ export function WorkoutDetailPage() {
         ) : null}
       </Card>
 
-      {/* Exercises */}
       <div className="space-y-4">
-        {workout.exercises.map((ex) => {
-          const exVolume = ex.sets.reduce((s, set) => s + setVolume(set), 0);
-          const best = ex.sets
-            .filter((s) => s.weight != null && s.reps != null && s.weight > 0 && s.reps > 0)
-            .map((s) => estimateOneRepMax(s.weight as number, s.reps as number))
-            .reduce((m, v) => Math.max(m, v), 0);
-
-          return (
-            <Card key={ex.id}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="font-semibold tracking-tight text-iron-900 dark:text-iron-50">
-                    {ex.name}
-                  </h3>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    <Badge className={CATEGORY_BADGE[ex.category]}>
-                      {CATEGORY_LABELS[ex.category]}
-                    </Badge>
-                    {best > 0 ? (
-                      <span className="text-xs text-iron-400">
-                        Est. 1RM {formatNumber(Math.round(best))} {ex.weight_unit}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-                {exVolume > 0 ? (
-                  <span className="shrink-0 text-sm tabular-nums text-iron-500 dark:text-iron-400">
-                    {formatVolume(exVolume, ex.weight_unit)}
-                  </span>
-                ) : null}
-              </div>
-
-              {ex.notes ? (
-                <p className="mt-2 text-sm text-iron-500 dark:text-iron-400">{ex.notes}</p>
-              ) : null}
-
-              <div className="mt-3 overflow-hidden rounded-xl border border-iron-100 dark:border-iron-800">
-                <table className="w-full text-sm">
-                  <thead className="bg-iron-50 text-xs text-iron-500 dark:bg-iron-800/50 dark:text-iron-400">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium">Set</th>
-                      <th className="px-3 py-2 text-right font-medium">
-                        Weight ({ex.weight_unit})
-                      </th>
-                      <th className="px-3 py-2 text-right font-medium">Reps</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-iron-100 dark:divide-iron-800">
-                    {ex.sets.map((set, i) => (
-                      <tr key={set.id}>
-                        <td className="px-3 py-2 font-semibold text-iron-400">{i + 1}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-iron-800 dark:text-iron-200">
-                          {set.weight != null ? formatNumber(set.weight) : '—'}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-iron-800 dark:text-iron-200">
-                          {set.reps != null ? set.reps : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          );
-        })}
+        {workout.exercises.map((ex) => (
+          <ExerciseBlock key={ex.id} ex={ex} />
+        ))}
       </div>
 
       <div className="mt-6">

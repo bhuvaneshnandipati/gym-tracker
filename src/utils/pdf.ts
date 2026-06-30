@@ -1,7 +1,34 @@
-import type { WorkoutWithExercises } from '@/types/workout';
-import { formatDateLong, formatDuration } from '@/utils/datetime';
+import type { SetRow, WorkoutExerciseWithSets, WorkoutWithExercises } from '@/types/workout';
+import { formatDateLong, formatDuration, formatClock } from '@/utils/datetime';
 import { formatVolume, formatNumber } from '@/utils/number';
-import { workoutVolume, setVolume } from '@/utils/stats';
+import { workoutVolume, setVolume, estimateOneRepMax } from '@/utils/stats';
+import { isStrength } from '@/lib/exerciseMetrics';
+
+/** Human-readable description of a single set, by the exercise's tracking type. */
+function describeSet(set: SetRow, ex: WorkoutExerciseWithSets): string {
+  switch (ex.tracking_type) {
+    case 'weight_reps': {
+      const w = set.weight != null ? `${formatNumber(set.weight)} ${ex.weight_unit}` : '—';
+      const r = set.reps != null ? `${set.reps}` : '—';
+      return `${w} × ${r}`;
+    }
+    case 'reps':
+      return set.reps != null ? `${set.reps} reps` : '—';
+    case 'duration':
+      return formatClock(set.duration_seconds);
+    case 'cardio': {
+      const parts: string[] = [];
+      if (set.duration_seconds != null) parts.push(formatClock(set.duration_seconds));
+      if (set.distance != null) parts.push(`${formatNumber(set.distance, 1)} mi`);
+      if (set.speed != null) parts.push(`${formatNumber(set.speed, 1)} mph`);
+      if (set.incline != null) parts.push(`${formatNumber(set.incline, 1)}%`);
+      if (set.calories != null) parts.push(`${set.calories} kcal`);
+      return parts.length ? parts.join('  ·  ') : '—';
+    }
+    default:
+      return '—';
+  }
+}
 
 /**
  * Build and download a PDF of all workouts. jsPDF and the autotable plugin are
@@ -42,21 +69,34 @@ export async function exportWorkoutsPDF(
     const body: string[][] = [];
     for (const ex of w.exercises) {
       const exVol = ex.sets.reduce((s, set) => s + setVolume(set), 0);
+      const best = isStrength(ex.tracking_type)
+        ? ex.sets
+            .filter((s) => s.weight != null && s.reps != null && s.weight > 0 && s.reps > 0)
+            .map((s) => estimateOneRepMax(s.weight as number, s.reps as number))
+            .reduce((m, v) => Math.max(m, v), 0)
+        : 0;
+
+      const summary =
+        isStrength(ex.tracking_type) && exVol > 0 ? formatVolume(exVol, ex.weight_unit) : '';
+
       ex.sets.forEach((set, i) => {
         body.push([
           i === 0 ? ex.name : '',
           String(i + 1),
-          set.weight != null ? `${formatNumber(set.weight)} ${ex.weight_unit}` : '—',
-          set.reps != null ? String(set.reps) : '—',
-          i === ex.sets.length - 1 && exVol > 0 ? formatVolume(exVol, ex.weight_unit) : '',
+          describeSet(set, ex),
+          i === ex.sets.length - 1
+            ? best > 0
+              ? `1RM ${formatNumber(Math.round(best))}`
+              : summary
+            : '',
         ]);
       });
-      if (ex.sets.length === 0) body.push([ex.name, '—', '—', '—', '']);
+      if (ex.sets.length === 0) body.push([ex.name, '—', '—', '']);
     }
 
     autoTable(doc, {
       startY: y,
-      head: [[{ content: header, colSpan: 5 }], ['Exercise', 'Set', 'Weight', 'Reps', 'Volume']],
+      head: [[{ content: header, colSpan: 4 }], ['Exercise', 'Set', 'Performance', '']],
       body,
       styles: { fontSize: 9, cellPadding: 2 },
       headStyles: { fillColor: [240, 61, 9], textColor: 255 },
@@ -67,7 +107,6 @@ export async function exportWorkoutsPDF(
       },
     });
 
-    // Add a page break if we're near the bottom.
     const pageHeight = doc.internal.pageSize.getHeight();
     if (y > pageHeight - 30) {
       doc.addPage();

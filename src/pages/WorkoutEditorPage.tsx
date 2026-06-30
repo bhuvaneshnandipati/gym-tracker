@@ -19,19 +19,14 @@ import {
   draftFromWorkout,
   draftFromTemplate,
   exerciseToDraft,
+  serializeSet,
+  isEmptySaveSet,
   useWorkoutDraft,
   type WorkoutDraft,
 } from '@/hooks/useWorkoutDraft';
 import type { WeightUnit } from '@/lib/categories';
 import type { SaveWorkoutInput } from '@/api/workouts';
 import { combineDateTime, durationSeconds, formatDuration } from '@/utils/datetime';
-
-function parseNumber(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === '') return null;
-  const n = Number(trimmed);
-  return Number.isFinite(n) ? n : null;
-}
 
 /** Convert the editor draft to an API payload, or return a validation error. */
 function buildPayload(
@@ -45,10 +40,10 @@ function buildPayload(
   const exercises: SaveWorkoutInput['exercises'] = [];
   for (const ex of draft.exercises) {
     const sets = ex.sets
-      .map((s) => ({ weight: parseNumber(s.weight), reps: parseNumber(s.reps) }))
-      .filter((s) => s.weight != null || s.reps != null);
+      .map((s) => serializeSet(s.values, ex.trackingType))
+      .filter((s) => !isEmptySaveSet(s));
     if (sets.length === 0) {
-      return { error: `“${ex.name}” needs at least one set with a weight or reps.` };
+      return { error: `“${ex.name}” needs at least one set with some data.` };
     }
     exercises.push({
       exerciseId: ex.exerciseId,
@@ -56,6 +51,7 @@ function buildPayload(
       category: ex.category,
       equipmentType: ex.equipmentType,
       weightUnit: ex.weightUnit,
+      trackingType: ex.trackingType,
       notes: ex.notes.trim() || null,
       sets,
     });

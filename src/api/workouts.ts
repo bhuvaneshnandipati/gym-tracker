@@ -1,5 +1,6 @@
 import { getSupabase } from '@/lib/supabase';
 import type { Category, EquipmentType, WeightUnit } from '@/lib/categories';
+import type { TrackingType } from '@/lib/exerciseMetrics';
 import type {
   WorkoutRow,
   WorkoutWithExercises,
@@ -10,6 +11,11 @@ import type {
 export interface SaveSetInput {
   weight: number | null;
   reps: number | null;
+  durationSeconds: number | null;
+  distance: number | null;
+  speed: number | null;
+  incline: number | null;
+  calories: number | null;
 }
 
 export interface SaveExerciseInput {
@@ -18,6 +24,7 @@ export interface SaveExerciseInput {
   category: Category;
   equipmentType: EquipmentType;
   weightUnit: WeightUnit;
+  trackingType: TrackingType;
   notes: string | null;
   sets: SaveSetInput[];
 }
@@ -94,6 +101,7 @@ export async function saveWorkout(input: SaveWorkoutInput): Promise<string> {
         category: ex.category,
         equipment_type: ex.equipmentType,
         weight_unit: ex.weightUnit,
+        tracking_type: ex.trackingType,
         notes: ex.notes,
         position: i,
       })
@@ -106,6 +114,11 @@ export async function saveWorkout(input: SaveWorkoutInput): Promise<string> {
         workout_exercise_id: weRow.id,
         weight: s.weight,
         reps: s.reps,
+        duration_seconds: s.durationSeconds,
+        distance: s.distance,
+        speed: s.speed,
+        incline: s.incline,
+        calories: s.calories,
         position: j,
         completed: true,
       }));
@@ -194,8 +207,17 @@ export async function duplicateWorkout(id: string): Promise<string> {
       category: ex.category,
       equipmentType: ex.equipment_type,
       weightUnit: ex.weight_unit,
+      trackingType: ex.tracking_type,
       notes: ex.notes,
-      sets: ex.sets.map((s) => ({ weight: s.weight, reps: s.reps })),
+      sets: ex.sets.map((s) => ({
+        weight: s.weight,
+        reps: s.reps,
+        durationSeconds: s.duration_seconds,
+        distance: s.distance,
+        speed: s.speed,
+        incline: s.incline,
+        calories: s.calories,
+      })),
     })),
   });
 }

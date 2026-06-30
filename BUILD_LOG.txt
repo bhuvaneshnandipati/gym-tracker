@@ -1,0 +1,509 @@
+==============================================================================
+GYM TRACKER — BUILD LOG (Milestone 1)
+Generated: 2026-06-25
+==============================================================================
+
+PURPOSE
+  Debug/reference log for the Milestone 1 scaffold. Records what was generated,
+  the exact toolchain used, validation results, and notes for troubleshooting.
+
+------------------------------------------------------------------------------
+TOOLCHAIN VERIFIED IN BUILD ENVIRONMENT
+------------------------------------------------------------------------------
+  Node.js : v22 (project targets Node 20+; see .nvmrc)
+  npm     : 10.x
+  Vite    : 5.4.x
+  TypeScript : 5.6.x (strict mode)
+  Tailwind CSS : 3.4.x (darkMode: 'class')
+  React   : 18.3.x
+  React Router : 6.28.x
+  ESLint  : 9.x (flat config)  |  Prettier 3.x
+
+------------------------------------------------------------------------------
+VALIDATION RESULTS (all passing)
+------------------------------------------------------------------------------
+  npm install        -> OK (246 packages)
+  npm run typecheck  -> OK (0 errors)
+  npm run lint       -> OK (0 errors, 0 warnings)
+  npm run format:check -> OK (all files match Prettier style)
+  npm run build      -> OK
+                        dist/index.html  ~0.69 kB
+                        dist/...css      ~17.97 kB (gzip 4.15 kB)
+                        dist/...js       ~207.85 kB (gzip 66.56 kB)
+  dev server smoke   -> OK (HTTP 200 on / and /src/main.tsx)
+
+------------------------------------------------------------------------------
+WHAT THIS MILESTONE INCLUDES
+------------------------------------------------------------------------------
+  - Vite + React + TypeScript (strict) project
+  - Tailwind CSS with custom brand tokens (flame accent, iron neutrals)
+  - ESLint (flat config) + Prettier, wired to npm scripts
+  - React Router v6 with route table (App.tsx)
+  - Full folder structure (api, services, lib, hooks, contexts, etc.)
+  - Light/Dark/System theme with localStorage persistence + no-FOUC init
+  - Responsive app shell: desktop sidebar, mobile bottom nav, sticky top bar,
+    floating action button
+  - Reusable UI primitives: Button, Card, Skeleton, EmptyState, PageHeader
+  - Error boundary + 404 page
+  - "@" path alias -> src/
+  - Vercel SPA rewrite (vercel.json)
+  - .env.example with VITE_ variables
+
+  NOT YET INCLUDED (later milestones): Supabase client, auth, database,
+  workout logging, charts, exports, offline. Placeholder pages show empty
+  states where those features will land.
+
+------------------------------------------------------------------------------
+TROUBLESHOOTING NOTES
+------------------------------------------------------------------------------
+  - "Cannot find module 'node:path' / __dirname" during build:
+      Ensure @types/node is installed (it is, in devDependencies). Re-run
+      `npm install`.
+  - Wrong theme flash on load:
+      Handled by src/lib/theme-init.ts which sets the .dark class before React
+      mounts. If editing theme logic, keep theme-init.ts in sync with
+      src/contexts/ThemeProvider.tsx.
+  - 404 on refresh after deploy:
+      vercel.json rewrites all paths to /index.html. Confirm it's present and
+      that the host is configured for SPA routing.
+  - Tailwind classes not applying:
+      Check tailwind.config.js `content` globs include ./index.html and
+      ./src/**/*.{ts,tsx}. Restart the dev server after config changes.
+  - ESLint react-refresh warning about context exports:
+      Context value/types live in src/contexts/theme-context.ts (no component);
+      the provider component is separate in ThemeProvider.tsx. Keep that split.
+
+------------------------------------------------------------------------------
+HOW TO RUN
+------------------------------------------------------------------------------
+  npm install
+  cp .env.example .env      (Windows: copy .env.example .env)
+  npm run dev               -> http://localhost:5173
+==============================================================================
+
+
+==============================================================================
+MILESTONE 2 — Supabase, auth, protected routes, DB connection
+Generated: 2026-06-25
+==============================================================================
+
+ADDED DEPENDENCIES
+  @supabase/supabase-js ^2.46.1
+  react-hook-form ^7.53.2
+  @hookform/resolvers ^3.9.1
+  zod ^3.23.8
+
+VALIDATION RESULTS (all passing)
+  npm install        -> OK (258 packages)
+  npm run typecheck  -> OK (0 errors)
+  npm run lint       -> OK (0 errors, 0 warnings)
+  npm run format:check -> OK
+  npm run build      -> OK
+                        dist css ~23.6 kB (gzip 4.96 kB)
+                        dist js  ~528 kB (gzip 151 kB)
+  dev smoke (dummy env) -> OK: /, /login, main.tsx, lib/supabase.ts all HTTP 200
+
+NOTE: Build prints a ">500 kB chunk" warning. This is expected — supabase-js is
+large and everything is still in one chunk. Route-level code splitting is the
+Milestone 7 (performance) task; it is a warning, not an error, and does not
+affect functionality.
+
+WHAT THIS MILESTONE INCLUDES
+  - Supabase client (src/lib/supabase.ts) with PKCE flow and a remember-me
+    storage adapter (localStorage vs sessionStorage).
+  - AuthProvider + useAuth: session, user, profile, loading, and actions
+    (sign in/up, Google OAuth, sign out, send reset, update password).
+  - Auth pages: Login, Signup (with email-confirmation state), Forgot password,
+    Reset password, OAuth callback.
+  - Route guards: RequireAuth (protects app) + RedirectIfAuthed (auth pages),
+    with post-login return-to-intended-destination.
+  - UserMenu in the top bar (avatar, name/email, settings, sign out).
+  - MissingSupabaseConfig screen when env vars are absent (no white screen).
+  - Database: supabase/migrations/0001_profiles.sql — profiles table, RLS
+    policies (owner-only), signup trigger, updated_at trigger.
+  - React Hook Form + Zod validation introduced for all auth forms.
+
+ASSUMPTIONS MADE (unspecified items)
+  - Google AND email/password both enabled from the start.
+  - Password minimum length: 8 characters.
+  - Auth flow: PKCE (recommended for SPAs).
+  - Remember me: ON by default.
+  - Default weight unit in profiles: lbs.
+
+TROUBLESHOOTING NOTES
+  - "Connect Supabase to continue" screen: VITE_SUPABASE_URL / ANON_KEY missing
+    or dev server not restarted after editing .env.
+  - Google button errors: enable the Google provider in Supabase Auth and add
+    the redirect URLs (see supabase/README.md).
+  - "Could not load profile" warning in console: apply 0001_profiles.sql.
+  - Reset/confirmation links not returning to the app: add the redirect URLs
+    and set the Site URL in Supabase Auth settings.
+==============================================================================
+
+
+==============================================================================
+MILESTONE 3 — Database schema, workout & exercise CRUD, entry page
+Generated: 2026-06-25
+==============================================================================
+
+ADDED DEPENDENCIES
+  @tanstack/react-query ^5.59.16
+
+VALIDATION RESULTS (all passing)
+  npm install        -> OK (260 packages)
+  npm run typecheck  -> OK (0 errors)
+  npm run lint       -> OK (0 errors, 0 warnings)
+  npm run format:check -> OK
+  npm run build      -> OK
+                        dist css ~29.4 kB (gzip 5.78 kB)
+                        dist js  ~596.7 kB (gzip 170.23 kB)
+  dev smoke (dummy env) -> OK: /, /workout/new, and all new modules HTTP 200
+
+DATABASE (apply in Supabase SQL editor, in order)
+  supabase/migrations/0002_workouts.sql
+    - exercises (built-in user_id NULL + custom per-user), RLS, unique name
+      indexes, category/equipment checks
+    - workouts (date/start/end/duration/notes), RLS, updated_at trigger
+    - workout_exercises (snapshots name/category, ordered by position), RLS
+    - sets (weight numeric, reps int, completed, position), RLS via parent
+  supabase/migrations/0003_seed_exercises.sql
+    - 42 built-in exercises from the spec, idempotent (WHERE NOT EXISTS)
+
+APP LAYER
+  - api/exercises.ts: fetch, createCustomExercise, deleteCustomExercise
+  - api/workouts.ts: saveWorkout (create + update via child replace),
+    fetchWorkout, fetchWorkouts, fetchLastWorkout, deleteWorkout,
+    duplicateWorkout
+  - lib/queryClient.ts: QueryClient + centralized queryKeys
+  - hooks/useExercises.ts, hooks/useWorkouts.ts: TanStack Query queries/mutations
+  - hooks/useWorkoutDraft.ts: useReducer-based editor state (add/remove/
+    duplicate/reorder exercises; add/remove/edit sets; load from workout or
+    template)
+  - lib/categories.ts: category + equipment metadata, badge colors, WeightUnit
+  - types/workout.ts, utils/datetime.ts
+
+UI
+  - components/ui: Badge, Select, Textarea, Modal
+  - components/workout: ExercisePicker (searchable, grouped, create/delete
+    custom), ExerciseCard (unit toggle, notes, sets grid, actions menu)
+  - pages/WorkoutEditorPage.tsx: handles /workout/new and /workout/:id/edit;
+    session date/time/notes with live duration; validation; saved confirmation
+  - Removed pages/NewWorkoutPage.tsx (placeholder) -> replaced by editor
+  - main.tsx: QueryClientProvider added
+
+ASSUMPTIONS MADE (unspecified items)
+  - Sets stored as individual rows (clean progress queries in M5).
+  - workout_exercises snapshot name/category so history survives library edits.
+  - Reorder via up/down menu actions (drag-and-drop deferred to M7 polish).
+  - On update, children are replaced (delete + reinsert) — simple + correct at
+    personal scale; ownership enforced by RLS.
+  - New set seeds its values from the previous set for fast entry.
+  - After saving, a confirmation screen is shown (history list lands in M4, so
+    redirecting to it now would look empty).
+
+NOTE: ">500 kB chunk" build warning persists (now ~597 kB). Route-level code
+splitting is the Milestone 7 performance task; warning only, not an error.
+
+TROUBLESHOOTING NOTES
+  - Empty exercise picker / "Could not load profile": apply 0002 + 0003 (and
+    0001) migrations to your Supabase project.
+  - "new row violates row-level security": ensure you are signed in; custom
+    exercise inserts require is_custom = true and user_id = your uid (handled
+    by the API).
+  - Saving an edited workout: children are replaced each save; set positions
+    are derived from on-screen order.
+==============================================================================
+
+
+==============================================================================
+MILESTONE 3 — Schema, workout/exercise CRUD, workout entry page
+Generated: 2026-06-27
+==============================================================================
+
+ADDED DEPENDENCIES
+  @tanstack/react-query ^5.59.16
+
+VALIDATION RESULTS (all passing)
+  npm install        -> OK
+  npm run typecheck  -> OK (0 errors)
+  npm run lint       -> OK (0 errors, 0 warnings)
+  npm run format:check -> OK
+  npm run build      -> OK (js ~597 kB / gzip ~170 kB; >500kB warning only)
+  dev smoke (dummy env) -> OK: /, /workout/new, /login, editor page +
+                           ExercisePicker + api/workouts + queryClient all 200
+
+WHAT THIS MILESTONE INCLUDES
+  Database (supabase/migrations):
+    0002_workouts.sql — exercises (global + custom), workouts, workout_exercises
+      (name/category snapshot, position), sets (weight/reps/completed/position).
+      Indexes + Row Level Security (exercises: read global+own / write own;
+      workouts: owner-only; workout_exercises & sets: access derived from the
+      parent workout via EXISTS). start_time/end_time are timestamptz.
+    0003_seed_exercises.sql — 41 built-in exercises (idempotent insert).
+  Data layer:
+    lib/queryClient.ts (+ centralized queryKeys), lib/categories.ts,
+    api/exercises.ts, api/workouts.ts (saveWorkout/fetch/fetchLast/duplicate/
+    delete), hooks/useExercises.ts, hooks/useWorkouts.ts, hooks/useWorkoutDraft.ts
+    (reducer-based editor state), utils/datetime.ts, types/workout.ts.
+  UI:
+    pages/WorkoutEditorPage.tsx (new + edit), components/workout/ExercisePicker
+    (searchable, category-grouped, custom create/delete) and ExerciseCard
+    (sets grid, lbs/kg toggle, notes, duplicate/move/remove). New primitives:
+    ui/Badge, ui/Modal, ui/Select, ui/Textarea.
+  Wiring:
+    main.tsx now wraps the app in QueryClientProvider; App.tsx routes
+    /workout/new and /workout/:id/edit to the editor; obsolete NewWorkoutPage
+    placeholder removed.
+
+IMPORTANT RECONCILIATION NOTE
+  A coherent set of Milestone-3 source files was already present in the project
+  at the start of this milestone (api/hooks/components/editor/migrations). Per
+  the working agreement to treat existing project files as the source of truth,
+  these were reviewed and ADOPTED rather than rewritten. The only schema file
+  that conflicted was 0002_workouts.sql; it was rewritten to MATCH the app
+  code's conventions exactly:
+    - column "equipment_type" (not "equipment")
+    - "position" ordering (not "order_index"/"set_index")
+    - sets.completed boolean
+    - start_time/end_time as timestamptz (the app stores ISO timestamps)
+    - no user_id on workout_exercises/sets; RLS derives ownership from the
+      parent workout (matches the API insert payloads).
+  Verified end-to-end consistency afterward via typecheck + lint + build + smoke.
+
+ASSUMPTIONS MADE (unspecified items)
+  - Exercise library seeded into the DB as global rows; custom exercises per user.
+  - Sets stored as individual rows (clean for progress queries in M5).
+  - Reordering via accessible up/down menu actions (drag-and-drop deferred to M7).
+  - Editor "save" uses replace-children on edit (no client-side transactions
+    in Supabase); correct and simple at personal scale, enforced by RLS.
+==============================================================================
+
+
+==============================================================================
+MILESTONE 4 — Dashboard, history, search/filters, detail view
+Generated: 2026-06-27
+==============================================================================
+
+ADDED DEPENDENCIES
+  None (uses the existing stack).
+
+VALIDATION RESULTS (all passing)
+  npm install        -> OK
+  npm run typecheck  -> OK (0 errors)
+  npm run lint       -> OK (0 errors, 0 warnings)
+  npm run format:check -> OK
+  npm run build      -> OK (js ~618 kB / gzip ~175 kB; >500kB warning only)
+  dev smoke (dummy env) -> OK: /, /history, /workout/:id, and the new page/util
+                           modules all HTTP 200
+
+NEW FILES
+  utils/number.ts           - formatNumber / formatVolume / formatCompact
+  utils/stats.ts            - volume, e1RM (Epley), streak, computeDashboardStats
+  components/dashboard/StatCard.tsx
+  components/ui/ConfirmDialog.tsx
+  components/workout/WorkoutCard.tsx
+  pages/WorkoutDetailPage.tsx
+
+MODIFIED FILES
+  pages/DashboardPage.tsx   - live stats grid, recent workouts, PR list
+  pages/HistoryPage.tsx     - search + exercise/date filters + sort + actions
+  utils/datetime.ts         - added formatDateLong
+  hooks/useWorkouts.ts      - save/delete now also invalidate the specific
+                              workout query (keeps detail/edit fresh)
+  App.tsx                   - added /workout/:id (detail) route + import
+  package.json              - version 0.4.0
+
+DASHBOARD METRICS (all computed client-side from one cached query)
+  total workouts, current streak, this week, this month, avg duration,
+  total volume, most-used exercise (by sessions), favorite exercise (by sets),
+  top-5 personal records by estimated 1RM, 5 most recent workouts.
+
+HISTORY FEATURES
+  search (notes + exercise names), filter by exercise, filter by date range,
+  sort (newest/oldest/longest/most volume), per-row edit/duplicate/delete with
+  a confirmation dialog. Duplicate creates a copy and opens it in the editor.
+
+ASSUMPTIONS MADE (unspecified items)
+  - "Most used" = appears in the most distinct sessions; "Favorite" = most sets
+    logged (both shown, clearly labelled).
+  - Personal records ranked by estimated 1RM (Epley), top 5 on the dashboard.
+  - Total/exercise volume summed numerically; labelled with the user's default
+    unit. (Per-exercise detail uses that exercise's own unit.)
+  - Delete uses a confirmation dialog; "undo delete" is deferred to Milestone 6.
+==============================================================================
+
+
+==============================================================================
+MILESTONE 5 — Charts, analytics, progress, PRs
+Generated: 2026-06-27
+==============================================================================
+
+ADDED DEPENDENCIES
+  recharts ^2.13.3  (resolves to 2.15.x; staying on v2 for API stability)
+
+VALIDATION RESULTS (all passing)
+  npm install        -> OK
+  npm run typecheck  -> OK (0 errors)
+  npm run lint       -> OK (0 errors, 0 warnings)
+  npm run format:check -> OK
+  npm run build      -> OK
+                        main bundle  ~619 kB (gzip ~176 kB)
+                        ProgressPage ~404 kB (gzip ~111 kB)  <- separate chunk
+  dev smoke (dummy env) -> OK: /, /progress, progress page/util/chart modules 200
+
+NEW FILES
+  utils/progress.ts                  - frequency (week/month), volume/duration
+                                       over time, per-exercise sessions, summary,
+                                       PR timeline, compact date labels
+  components/charts/useChartColors.ts - theme-aware Recharts palette
+  components/charts/ChartCard.tsx     - titled chart wrapper + empty state
+  components/charts/Series.tsx        - BarSeries / AreaSeries / LineSeries
+  pages/ProgressPage.tsx             - overview trends + per-exercise drill-down
+
+MODIFIED FILES
+  App.tsx        - ProgressPage is now React.lazy + Suspense (code-splitting)
+  package.json   - recharts dep, version 0.5.0
+
+PERFORMANCE NOTE
+  Recharts is large, so the Progress route is lazy-loaded: charts ship in a
+  separate ~404 kB chunk that only downloads when the user opens /progress. The
+  main bundle is unchanged from Milestone 4 (~619 kB; still >500 kB due to
+  Supabase — further splitting is the Milestone 7 task). This is an
+  improvement, not a regression.
+
+CHARTS DELIVERED (per spec)
+  workout frequency, weekly workouts, monthly workouts, workout duration,
+  volume over time, exercise progress, personal-record timeline.
+
+PROGRESS METRICS (per exercise)
+  personal record, estimated 1RM (Epley), volume/weight/rep progression,
+  number of sessions, average weight, average reps.
+
+ASSUMPTIONS MADE (unspecified items)
+  - Frequency windows: last 12 weeks / last 12 months.
+  - Progress page defaults to the user's most-used exercise; a picker selects
+    any movement (as flagged before this milestone).
+  - "Weekly/Monthly" toggle on frequency; metric toggle (top weight / est 1RM /
+    volume / reps) on the per-exercise chart.
+  - Charts are theme-aware and respect light/dark mode.
+==============================================================================
+
+
+==============================================================================
+MILESTONE 6 — Body metrics, CSV/PDF, offline, realtime
+Generated: 2026-06-27
+==============================================================================
+
+ADDED DEPENDENCIES
+  papaparse ^5.4.1 (+ @types/papaparse), jspdf ^2.5.2, jspdf-autotable ^3.8.4,
+  @tanstack/react-query-persist-client, @tanstack/query-sync-storage-persister,
+  vite-plugin-pwa ^0.21 (dev)
+
+VALIDATION RESULTS (all passing)
+  npm install        -> OK
+  npm run typecheck  -> OK (0 errors)  [fixed 1: null-narrowing in useRealtimeSync]
+  npm run lint       -> OK (0 errors, 0 warnings)
+  npm run format:check -> OK
+  npm run build      -> OK; PWA generateSW precached 21 entries -> dist/sw.js
+                        main ~656 kB; Recharts shared lazy chunk ~400 kB;
+                        jsPDF/html2canvas/autotable lazy (only on PDF export)
+  dev smoke (dummy env) -> OK: /, /body, /settings + new modules HTTP 200
+
+NEW FILES
+  supabase/migrations/0004_body_metrics.sql  - table, RLS, realtime publication
+  api/bodyMetrics.ts, hooks/useBodyMetrics.ts, types (BodyMetricRow)
+  contexts/toast-context.ts, contexts/ToastProvider.tsx, hooks/useToast.ts
+  utils/csv.ts (export + import), utils/pdf.ts (lazy jsPDF)
+  hooks/useOnlineStatus.ts, components/OfflineBanner.tsx
+  hooks/useRealtimeSync.ts
+  public/pwa-192x192.png, pwa-512x512.png, maskable-512x512.png
+
+MODIFIED FILES
+  pages/BodyMetricsPage.tsx (full build-out; lazy-loaded)
+  pages/SettingsPage.tsx (Your data card: export CSV/PDF, import CSV)
+  layouts/AppLayout.tsx (realtime sync + offline banner)
+  main.tsx (ToastProvider + PersistQueryClientProvider)
+  lib/queryClient.ts (gcTime 24h for offline persistence)
+  vite.config.ts (VitePWA), App.tsx (lazy BodyMetricsPage)
+  package.json (deps, v0.6.0), README.md, supabase/README.md
+
+OFFLINE BEHAVIOR (scoped intentionally for stability)
+  - App shell precached by the service worker -> loads offline.
+  - Query cache persisted to localStorage -> previously-loaded data readable offline.
+  - Mutations made while offline are paused by TanStack Query and replayed on
+    reconnect (OfflineBanner calls resumePausedMutations + invalidate). Supabase
+    API/auth responses are NOT cached by the SW (avoids stale sessions/data).
+
+REALTIME
+  useRealtimeSync subscribes to postgres_changes on workouts + body_metrics
+  (filtered to the current user) and invalidates the matching queries. Requires
+  the tables in the supabase_realtime publication (handled by 0004).
+
+ASSUMPTIONS MADE (unspecified items)
+  - Body metrics: one entry per day (unique user_id+date, upserted).
+  - CSV import groups rows into one workout per date; columns match the export.
+  - PDF is a per-workout exercise/set table; CSV is one row per set.
+  - Toasts added (listed under Smart Features). "Undo delete" was NOT added —
+    delete cascades children, so a safe undo needs soft-delete; deferred (can be
+    added later). A confirmation dialog guards deletes instead.
+==============================================================================
+
+
+==============================================================================
+MILESTONE 7 — Polish, performance, testing, deployment, docs  (v1.0.0)
+Generated: 2026-06-27
+==============================================================================
+
+ADDED DEPENDENCIES
+  vitest ^2.1.5 (dev)
+
+VALIDATION RESULTS (all passing)
+  npm install        -> OK
+  npm test           -> OK (3 files, 21 tests)
+  npm run typecheck  -> OK (0 errors)
+  npm run lint       -> OK (0 errors, 0 warnings)
+  npm run format:check -> OK
+  npm run build      -> OK, NO chunk warning
+  dev smoke          -> OK: /, /history, /progress, /body, /settings, /login = 200
+
+PERFORMANCE — bundle after vendor splitting (gzip)
+  index (app)   ~24 kB     <- was ~190 kB before splitting
+  react         ~46 kB
+  supabase      ~53 kB
+  vendor        ~76 kB
+  forms         ~23 kB
+  query         ~14 kB
+  router        ~8 kB
+  charts        ~82 kB  (lazy: Progress/Body pages only)
+  pdf           ~209 kB (lazy: only on PDF export)
+  Main app chunk dropped from ~656 kB to ~90 kB raw (~24 kB gzip).
+
+TESTING
+  Vitest unit tests for pure utilities:
+    utils/stats.test.ts    - setVolume, workoutVolume, estimateOneRepMax,
+                             computeStreak, computeDashboardStats (12 tests)
+    utils/csv.test.ts      - export header/rows + import round-trip + coercion (4)
+    utils/progress.test.ts - sessions, summary, PR timeline, frequency (5)
+  Scripts: `npm test` (run once), `npm run test:watch`.
+  vitest.config.ts added (node env, '@' alias).
+
+POLISH / ACCESSIBILITY
+  - Skip-to-content link + focusable <main> in AppLayout.
+  - (Existing) visible keyboard focus rings, reduced-motion support, labelled
+    inputs/controls, aria on menus/dialogs.
+
+PERFORMANCE CONFIG
+  vite.config.ts build.rollupOptions.output.manualChunks groups node_modules
+  into react / supabase / query / router / forms / charts / pdf / vendor.
+  chunkSizeWarningLimit raised to 800 (the only large chunk, pdf ~702 kB, is
+  loaded on-demand only).
+
+DOCS
+  README finalized: status v1.0.0, roadmap all-complete, Testing & performance
+  section, production checklist, updated scripts and stack tables.
+
+PROJECT COMPLETE
+  All 7 milestones delivered. The app builds with `npm install` + `npm run build`,
+  runs with `npm run dev`, tests with `npm test`, and deploys to Vercel (Hobby)
+  + Supabase (Free) at $0/month for personal use.
+==============================================================================

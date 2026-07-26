@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CalendarDays, CheckCircle2, ClipboardCopy, Dumbbell, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
@@ -12,126 +12,158 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { FullPageSpinner } from '@/components/FullPageSpinner';
 import { ExerciseCard } from '@/components/workout/ExerciseCard';
 import { ExercisePicker } from '@/components/workout/ExercisePicker';
+import { SaveStatusIndicator } from '@/components/workout/SaveStatusIndicator';
 import { useAuth } from '@/hooks/useAuth';
-import { useWorkout, useLastWorkout, useSaveWorkout } from '@/hooks/useWorkouts';
+import { useToast } from '@/hooks/useToast';
+import { useWorkout, useWorkouts, useSaveWorkout } from '@/hooks/useWorkouts';
+import { useExerciseHistory } from '@/hooks/useExerciseHistory';
+import { useAutoSave } from '@/hooks/useAutoSave';
 import {
   createEmptyDraft,
   draftFromWorkout,
   draftFromTemplate,
   exerciseToDraft,
-  serializeSet,
-  isEmptySaveSet,
   useWorkoutDraft,
-  type WorkoutDraft,
 } from '@/hooks/useWorkoutDraft';
+import { buildPayload, payloadSignature, type WorkoutPayload } from '@/lib/workoutPayload';
 import type { WeightUnit } from '@/lib/categories';
-import type { SaveWorkoutInput } from '@/api/workouts';
-import { combineDateTime, durationSeconds, formatDuration } from '@/utils/datetime';
-
-/** Convert the editor draft to an API payload, or return a validation error. */
-function buildPayload(
-  draft: WorkoutDraft,
-  id?: string,
-): { payload: SaveWorkoutInput } | { error: string } {
-  if (draft.exercises.length === 0) {
-    return { error: 'Add at least one exercise before saving.' };
-  }
-
-  const exercises: SaveWorkoutInput['exercises'] = [];
-  for (const ex of draft.exercises) {
-    const sets = ex.sets
-      .map((s) => serializeSet(s.values, ex.trackingType))
-      .filter((s) => !isEmptySaveSet(s));
-    if (sets.length === 0) {
-      return { error: `“${ex.name}” needs at least one set with some data.` };
-    }
-    exercises.push({
-      exerciseId: ex.exerciseId,
-      name: ex.name,
-      category: ex.category,
-      equipmentType: ex.equipmentType,
-      weightUnit: ex.weightUnit,
-      trackingType: ex.trackingType,
-      notes: ex.notes.trim() || null,
-      sets,
-    });
-  }
-
-  return {
-    payload: {
-      id,
-      date: draft.date,
-      startTime: combineDateTime(draft.date, draft.startTime),
-      endTime: combineDateTime(draft.date, draft.endTime),
-      durationSeconds: durationSeconds(draft.date, draft.startTime, draft.endTime),
-      notes: draft.notes.trim() || null,
-      exercises,
-    },
-  };
-}
+import { durationSeconds, formatDuration } from '@/utils/datetime';
 
 export function WorkoutEditorPage() {
   const { id } = useParams<{ id: string }>();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
+  const toast = useToast();
   const { profile } = useAuth();
   const defaultUnit: WeightUnit = profile?.weight_unit ?? 'lbs';
 
-  const existing = useWorkout(id);
-  const lastWorkout = useLastWorkout();
+  // Sessions that begin as "new" keep that framing even after auto-save has
+  // created the row and swapped the URL to /workout/:id.
+  const startedNew = useRef(!id);
+
+  const [hydrated, setHydrated] = useState(!isEdit);
+  const existing = useWorkout(id, !hydrated);
   const saveWorkout = useSaveWorkout();
+
+  // The full workout list is already cached app-wide; reuse it for both the
+  // "copy previous workout" template and all per-exercise history lookups.
+  const { data: workouts } = useWorkouts();
 
   const { draft, dispatch } = useWorkoutDraft(createEmptyDraft(defaultUnit));
   const initialised = useRef(false);
 
+  // Tracks the persisted row: undefined until auto-save creates it.
+  const [workoutId, setWorkoutId] = useState<string | undefined>(id);
+  const workoutIdRef = useRef<string | undefined>(id);
+
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [justAddedKey, setJustAddedKey] = useState<string | null>(null);
+
+  const history = useExerciseHistory(workoutId);
+  const lastWorkout = useMemo(
+    () => (workouts ?? []).find((w) => w.id !== workoutId) ?? null,
+    [workouts, workoutId],
+  );
 
   // Populate the draft from an existing workout exactly once.
   useEffect(() => {
     if (isEdit && existing.data && !initialised.current) {
       initialised.current = true;
       dispatch({ type: 'reset', draft: draftFromWorkout(existing.data) });
+      setHydrated(true);
     }
   }, [isEdit, existing.data, dispatch]);
 
   const liveDuration = durationSeconds(draft.date, draft.startTime, draft.endTime);
 
+  // ---------------------------------------------------------------- auto-save
+  const built = useMemo(() => buildPayload(draft), [draft]);
+  const payload = 'payload' in built ? built.payload : null;
+  const signature = useMemo(() => payloadSignature(payload), [payload]);
+
+  const persist = useCallback(
+    async (data: WorkoutPayload) => {
+      const savedId = await saveWorkout.mutateAsync({ ...data, id: workoutIdRef.current });
+      if (!workoutIdRef.current) {
+        workoutIdRef.current = savedId;
+        initialised.current = true; // the draft is the source of truth from here
+        setWorkoutId(savedId);
+        navigate(`/workout/${savedId}`, { replace: true });
+      }
+    },
+    [saveWorkout, navigate],
+  );
+
+  const autoSave = useAutoSave<WorkoutPayload>({
+    data: payload,
+    signature,
+    save: persist,
+    delay: 800,
+    enabled: hydrated && !saved,
+  });
+
+  const { flush: flushSave, reset: resetSave } = autoSave;
+
+  // ------------------------------------------------------------------ actions
   const canCopyPrevious =
-    !isEdit && draft.exercises.length === 0 && Boolean(lastWorkout.data?.exercises.length);
+    startedNew.current && draft.exercises.length === 0 && Boolean(lastWorkout?.exercises.length);
 
   const handleCopyPrevious = () => {
-    if (!lastWorkout.data) return;
-    dispatch({ type: 'reset', draft: draftFromTemplate(lastWorkout.data, defaultUnit) });
+    if (!lastWorkout) return;
+    dispatch({ type: 'reset', draft: draftFromTemplate(lastWorkout, defaultUnit) });
   };
+
+  const handleAddExercise = useCallback(
+    (exercise: Parameters<typeof exerciseToDraft>[0]) => {
+      const entry = history.get(exercise.name);
+      const previousSets = entry?.lastSession?.sets;
+      const unit = entry?.unit ?? defaultUnit;
+      const drafted = exerciseToDraft(exercise, unit, previousSets);
+      dispatch({ type: 'addExercise', exercise: drafted });
+      setJustAddedKey(drafted.key);
+      if (previousSets && previousSets.length > 0) {
+        toast.info(`Loaded your previous ${exercise.name} workout.`);
+      }
+    },
+    [history, defaultUnit, dispatch, toast],
+  );
 
   const handleSave = async () => {
     setError(null);
-    const result = buildPayload(draft, id);
+    const result = buildPayload(draft);
     if ('error' in result) {
       setError(result.error);
       return;
     }
-    try {
-      await saveWorkout.mutateAsync(result.payload);
+    const outcome = await flushSave();
+    if (outcome === 'saved') {
       setSaved(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save the workout.');
+    } else if (outcome === 'offline') {
+      setError("You're offline. This workout will sync automatically when you reconnect.");
+    } else {
+      setError('Could not save the workout. Please try again.');
     }
   };
 
   const startAnother = () => {
     initialised.current = true; // prevent edit-reset logic
+    workoutIdRef.current = undefined;
+    setWorkoutId(undefined);
+    resetSave();
     dispatch({ type: 'reset', draft: createEmptyDraft(defaultUnit) });
+    setJustAddedKey(null);
+    setHydrated(true);
     setSaved(false);
     setError(null);
     navigate('/workout/new', { replace: true });
   };
 
-  if (isEdit && existing.isLoading) return <FullPageSpinner />;
+  // ------------------------------------------------------------------ render
+  if (isEdit && existing.isLoading && !initialised.current) return <FullPageSpinner />;
 
-  if (isEdit && existing.isError) {
+  if (isEdit && existing.isError && !initialised.current) {
     return (
       <>
         <PageHeader title="Edit workout" />
@@ -168,10 +200,15 @@ export function WorkoutEditorPage() {
   return (
     <>
       <PageHeader
-        title={isEdit ? 'Edit workout' : 'New workout'}
-        description={isEdit ? 'Update this session.' : "Log today's session."}
+        title={startedNew.current ? 'New workout' : 'Edit workout'}
+        description={startedNew.current ? "Log today's session." : 'Update this session.'}
         actions={
           <>
+            <SaveStatusIndicator
+              status={autoSave.status}
+              onRetry={() => void flushSave()}
+              className="mr-1"
+            />
             <Button variant="ghost" onClick={() => navigate(-1)}>
               Cancel
             </Button>
@@ -268,6 +305,8 @@ export function WorkoutEditorPage() {
                 exercise={ex}
                 index={index}
                 total={draft.exercises.length}
+                history={history.get(ex.name)}
+                justAdded={ex.key === justAddedKey}
                 onRemove={() => dispatch({ type: 'removeExercise', key: ex.key })}
                 onDuplicate={() => dispatch({ type: 'duplicateExercise', key: ex.key })}
                 onMove={(direction) => dispatch({ type: 'moveExercise', key: ex.key, direction })}
@@ -303,9 +342,7 @@ export function WorkoutEditorPage() {
       <ExercisePicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onSelect={(exercise) =>
-          dispatch({ type: 'addExercise', exercise: exerciseToDraft(exercise, defaultUnit) })
-        }
+        onSelect={handleAddExercise}
       />
     </>
   );

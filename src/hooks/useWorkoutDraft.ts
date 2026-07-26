@@ -175,7 +175,18 @@ export function draftFromTemplate(
   };
 }
 
-export function exerciseToDraft(exercise: ExerciseRow, unit: WeightUnit): DraftExercise {
+/**
+ * Build a draft exercise from the library.
+ *
+ * When `previousSets` are supplied (the user's most recent session for this
+ * exercise) they are recreated set-for-set so the values can be edited rather
+ * than retyped. Otherwise a single empty set is created.
+ */
+export function exerciseToDraft(
+  exercise: ExerciseRow,
+  unit: WeightUnit,
+  previousSets?: SetRow[],
+): DraftExercise {
   const trackingType = resolveTrackingType(exercise);
   return {
     key: uid(),
@@ -186,7 +197,10 @@ export function exerciseToDraft(exercise: ExerciseRow, unit: WeightUnit): DraftE
     trackingType,
     weightUnit: unit,
     notes: '',
-    sets: [emptySet()],
+    sets:
+      previousSets && previousSets.length > 0
+        ? previousSets.map((s) => ({ key: uid(), values: setRowToValues(s, trackingType) }))
+        : [emptySet()],
   };
 }
 

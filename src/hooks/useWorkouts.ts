@@ -14,11 +14,16 @@ export function useWorkouts() {
   return useQuery({ queryKey: queryKeys.workouts, queryFn: fetchWorkouts });
 }
 
-export function useWorkout(id: string | undefined) {
+/**
+ * A single workout. `enabled` lets the editor stop refetching once the draft
+ * has been hydrated, so auto-save invalidations don't re-read a row the editor
+ * is already the source of truth for.
+ */
+export function useWorkout(id: string | undefined, enabled = true) {
   return useQuery({
     queryKey: id ? queryKeys.workout(id) : ['workout', 'none'],
     queryFn: () => fetchWorkout(id as string),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && enabled,
   });
 }
 

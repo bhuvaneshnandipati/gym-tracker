@@ -68,6 +68,23 @@ export function formatDateLong(dateISO: string): string {
   });
 }
 
+/** Whole days between a YYYY-MM-DD date and today, or null when unparseable. */
+export function daysSince(dateISO: string): number | null {
+  const then = new Date(`${dateISO}T00:00:00`);
+  if (Number.isNaN(then.getTime())) return null;
+  const today = new Date(`${todayISODate()}T00:00:00`);
+  return Math.round((today.getTime() - then.getTime()) / 86_400_000);
+}
+
+/** Relative label such as "today", "yesterday" or "6 days ago". */
+export function daysAgoLabel(dateISO: string): string {
+  const days = daysSince(dateISO);
+  if (days == null) return dateISO;
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return `${days} days ago`;
+}
+
 /** Format a number of seconds as a clock: "0:45", "12:00", "1:05:30". */
 export function formatClock(totalSeconds: number | null): string {
   if (totalSeconds == null) return '—';

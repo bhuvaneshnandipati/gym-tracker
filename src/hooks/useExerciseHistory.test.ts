@@ -82,6 +82,12 @@ describe('buildExerciseHistory', () => {
     expect(entry?.lastSession?.date).toBe('2026-01-05');
   });
 
+  it('accumulates total sets and the average working weight', () => {
+    const entry = buildExerciseHistory([recent, older]).get('Leg Press');
+    expect(entry?.totalSets).toBe(4);
+    expect(entry?.avgWeight).toBe((220 + 240 + 240 + 300) / 4);
+  });
+
   it('returns no entry for an exercise that has never been performed', () => {
     expect(buildExerciseHistory([recent, older]).get('Hack Squat')).toBeUndefined();
   });

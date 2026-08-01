@@ -24,10 +24,20 @@ export interface ExerciseHistoryEntry {
   trackingType: TrackingType;
   /** Number of past sessions containing this exercise. */
   sessionCount: number;
+  /** Total sets logged across every past session. */
+  totalSets: number;
+  /** Mean load across every past working set that recorded a weight. */
+  avgWeight: number | null;
   /** Most recent session (not the personal-record session). */
   lastSession: ExerciseLastSession | null;
   /** Best stored effort by estimated 1RM. */
   pr: ExercisePersonalRecord | null;
+}
+
+/** Running accumulators used while folding; not part of the public entry. */
+interface WeightAccumulator {
+  sum: number;
+  count: number;
 }
 
 export type ExerciseHistory = Map<string, ExerciseHistoryEntry>;
@@ -41,6 +51,7 @@ export function buildExerciseHistory(
   excludeWorkoutId?: string,
 ): ExerciseHistory {
   const history: ExerciseHistory = new Map();
+  const weights = new Map<string, WeightAccumulator>();
 
   // Newest first, matching the order the workouts query already returns.
   const ordered = [...workouts].sort(
@@ -63,11 +74,15 @@ export function buildExerciseHistory(
           unit: ex.weight_unit ?? 'lbs',
           trackingType,
           sessionCount: 0,
+          totalSets: 0,
+          avgWeight: null,
           lastSession: null,
           pr: null,
         };
         history.set(ex.name, entry);
       }
+
+      entry.totalSets += ex.sets.length;
 
       if (!seen.has(ex.name)) {
         seen.add(ex.name);
@@ -83,6 +98,13 @@ export function buildExerciseHistory(
       }
 
       for (const set of ex.sets) {
+        if (set.weight != null && set.weight > 0) {
+          const acc = weights.get(ex.name) ?? { sum: 0, count: 0 };
+          acc.sum += set.weight;
+          acc.count += 1;
+          weights.set(ex.name, acc);
+        }
+
         if (set.weight == null || set.reps == null || set.weight <= 0 || set.reps <= 0) continue;
         const oneRepMax = estimateOneRepMax(set.weight, set.reps);
         if (!entry.pr || oneRepMax > entry.pr.oneRepMax) {
@@ -90,6 +112,11 @@ export function buildExerciseHistory(
         }
       }
     }
+  }
+
+  for (const [name, acc] of weights) {
+    const entry = history.get(name);
+    if (entry && acc.count > 0) entry.avgWeight = acc.sum / acc.count;
   }
 
   return history;

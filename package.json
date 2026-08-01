@@ -1,7 +1,7 @@
 {
   "name": "gym-tracker",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.2.0",
   "type": "module",
   "description": "A production-ready gym workout tracker built with React, TypeScript, Vite, Tailwind CSS, and Supabase.",
   "scripts": {

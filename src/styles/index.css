@@ -40,6 +40,21 @@
   :focus-visible {
     @apply outline-none ring-2 ring-flame-500 ring-offset-2 ring-offset-iron-50 dark:ring-offset-iron-950;
   }
+
+  /*
+   * Hide native number spinners. The set table already has explicit add/remove
+   * controls, and the arrows shrink the usable tap target on touch devices.
+   */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
 }
 
 @layer components {

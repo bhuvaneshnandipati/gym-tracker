@@ -75,9 +75,13 @@ export interface DashboardStats {
   streak: number;
   avgDurationSeconds: number | null;
   totalVolume: number;
+  /** Volume logged in the current calendar month. */
+  monthVolume: number;
   favoriteExercise: { name: string; sets: number } | null;
   mostUsedExercise: { name: string; sessions: number } | null;
   personalRecords: PersonalRecord[];
+  /** Number of exercises with at least one recorded weight × reps effort. */
+  personalRecordCount: number;
   recent: WorkoutWithExercises[];
 }
 
@@ -97,6 +101,7 @@ export function computeDashboardStats(
   let thisWeek = 0;
   let thisMonth = 0;
   let totalVolume = 0;
+  let monthVolume = 0;
   let durationSum = 0;
   let durationCount = 0;
 
@@ -108,8 +113,9 @@ export function computeDashboardStats(
     dates.add(workout.date);
 
     const d = parseLocalDate(workout.date);
+    const inThisMonth = `${d.getFullYear()}-${d.getMonth()}` === monthKey;
     if (d >= weekStart) thisWeek += 1;
-    if (`${d.getFullYear()}-${d.getMonth()}` === monthKey) thisMonth += 1;
+    if (inThisMonth) thisMonth += 1;
 
     if (workout.duration_seconds != null) {
       durationSum += workout.duration_seconds;
@@ -126,7 +132,9 @@ export function computeDashboardStats(
       }
 
       for (const set of ex.sets) {
-        totalVolume += setVolume(set);
+        const volume = setVolume(set);
+        totalVolume += volume;
+        if (inThisMonth) monthVolume += volume;
         if (set.weight != null && set.reps != null && set.weight > 0 && set.reps > 0) {
           const e1rm = estimateOneRepMax(set.weight, set.reps);
           const current = prByExercise.get(ex.name);
@@ -166,9 +174,11 @@ export function computeDashboardStats(
     streak: computeStreak(dates),
     avgDurationSeconds: durationCount > 0 ? Math.round(durationSum / durationCount) : null,
     totalVolume,
+    monthVolume,
     favoriteExercise: favoriteExercise ?? null,
     mostUsedExercise: mostUsedExercise ?? null,
     personalRecords,
+    personalRecordCount: prByExercise.size,
     recent: workouts.slice(0, 5),
   };
 }

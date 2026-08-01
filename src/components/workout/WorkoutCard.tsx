@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Copy, Dumbbell, MoreVertical, Pencil, Timer, Trash2, Weight } from 'lucide-react';
+import { Copy, Dumbbell, Layers, MoreVertical, Pencil, Timer, Trash2, Weight } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/utils/cn';
 import type { WorkoutWithExercises } from '@/types/workout';
-import { formatDateLong, formatDuration } from '@/utils/datetime';
+import { CATEGORY_BADGE, CATEGORY_LABELS, type Category } from '@/lib/categories';
+import { formatDateLong, formatDuration, daysAgoLabel } from '@/utils/datetime';
 import { workoutVolume, workoutSetCount } from '@/utils/stats';
-import { formatVolume } from '@/utils/number';
+import { formatVolume, formatNumber } from '@/utils/number';
 
 interface WorkoutCardProps {
   workout: WorkoutWithExercises;
@@ -29,49 +31,80 @@ export function WorkoutCard({
 
   const volume = workoutVolume(workout);
   const sets = workoutSetCount(workout);
+
+  const categories = useMemo(() => {
+    const seen: Category[] = [];
+    for (const ex of workout.exercises) {
+      if (!seen.includes(ex.category)) seen.push(ex.category);
+    }
+    return seen;
+  }, [workout.exercises]);
+
   const exerciseNames = workout.exercises.map((e) => e.name);
   const preview = exerciseNames.slice(0, 4).join(' · ');
   const extra = exerciseNames.length - 4;
 
   return (
-    <Card className="relative p-0">
+    <Card className="group relative overflow-hidden p-0 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg dark:hover:shadow-card-dark">
       <button
         type="button"
         onClick={() => navigate(`/workout/${workout.id}`)}
-        className="block w-full rounded-2xl p-5 text-left transition-colors hover:bg-iron-50 dark:hover:bg-iron-800/50"
+        className="block w-full rounded-2xl text-left transition-colors hover:bg-iron-50/70 dark:hover:bg-iron-800/40"
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="font-semibold tracking-tight text-iron-900 dark:text-iron-50">
-              {formatDateLong(workout.date)}
-            </h3>
-            {workout.notes ? (
-              <p className="mt-0.5 line-clamp-1 text-sm text-iron-500 dark:text-iron-400">
-                {workout.notes}
-              </p>
-            ) : null}
+        {/* Title block */}
+        <div className="px-5 pb-4 pt-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="truncate font-semibold tracking-tight text-iron-900 dark:text-iron-50">
+                {formatDateLong(workout.date)}
+              </h3>
+              <p className="mt-0.5 text-xs text-iron-400">{daysAgoLabel(workout.date)}</p>
+              {workout.notes ? (
+                <p className="mt-1.5 line-clamp-1 text-sm text-iron-500 dark:text-iron-400">
+                  {workout.notes}
+                </p>
+              ) : null}
+            </div>
+            {/* Spacer so text never sits under the menu button. */}
+            <div className="h-8 w-8 shrink-0" aria-hidden="true" />
           </div>
-          {/* Spacer so text never sits under the menu button. */}
-          <div className="h-8 w-8 shrink-0" aria-hidden="true" />
+
+          {categories.length > 0 ? (
+            <ul className="mt-3 flex flex-wrap gap-1.5">
+              {categories.slice(0, 4).map((category) => (
+                <li key={category}>
+                  <Badge className={CATEGORY_BADGE[category]}>{CATEGORY_LABELS[category]}</Badge>
+                </li>
+              ))}
+              {categories.length > 4 ? (
+                <li>
+                  <Badge className="bg-iron-100 text-iron-600 dark:bg-iron-800 dark:text-iron-300">
+                    +{categories.length - 4}
+                  </Badge>
+                </li>
+              ) : null}
+            </ul>
+          ) : null}
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-iron-600 dark:text-iron-300">
-          <span className="inline-flex items-center gap-1.5">
-            <Dumbbell className="h-4 w-4 text-iron-400" />
-            {workout.exercises.length} exercise{workout.exercises.length === 1 ? '' : 's'}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <Timer className="h-4 w-4 text-iron-400" />
-            {formatDuration(workout.duration_seconds)}
-          </span>
-          <span className="inline-flex items-center gap-1.5 tabular-nums">
-            <Weight className="h-4 w-4 text-iron-400" />
-            {volume > 0 ? formatVolume(volume, defaultUnit) : `${sets} sets`}
-          </span>
-        </div>
+        {/* Metrics strip */}
+        <dl className="grid grid-cols-2 divide-x divide-iron-100 border-t border-iron-100 text-sm sm:grid-cols-4 dark:divide-iron-800 dark:border-iron-800">
+          <Metric
+            icon={Dumbbell}
+            label="Exercises"
+            value={formatNumber(workout.exercises.length)}
+          />
+          <Metric icon={Layers} label="Sets" value={formatNumber(sets)} />
+          <Metric icon={Timer} label="Duration" value={formatDuration(workout.duration_seconds)} />
+          <Metric
+            icon={Weight}
+            label="Volume"
+            value={volume > 0 ? formatVolume(volume, defaultUnit) : '—'}
+          />
+        </dl>
 
         {preview ? (
-          <p className="mt-3 line-clamp-1 text-xs text-iron-400">
+          <p className="line-clamp-1 border-t border-iron-100 px-5 py-3 text-xs text-iron-400 dark:border-iron-800">
             {preview}
             {extra > 0 ? ` +${extra} more` : ''}
           </p>
@@ -83,10 +116,10 @@ export function WorkoutCard({
         <button
           type="button"
           onClick={() => setMenuOpen((o) => !o)}
-          aria-label="Workout actions"
+          aria-label={`Actions for the workout on ${formatDateLong(workout.date)}`}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-iron-500 hover:bg-iron-100 dark:hover:bg-iron-800"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-iron-500 transition-colors hover:bg-iron-100 dark:hover:bg-iron-800"
         >
           <MoreVertical className="h-4 w-4" />
         </button>
@@ -127,6 +160,20 @@ export function WorkoutCard({
         ) : null}
       </div>
     </Card>
+  );
+}
+
+function Metric({ icon: Icon, label, value }: { icon: typeof Copy; label: string; value: string }) {
+  return (
+    <div className="px-5 py-3">
+      <dt className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-iron-400">
+        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+        {label}
+      </dt>
+      <dd className="mt-0.5 truncate text-sm font-medium tabular-nums text-iron-800 dark:text-iron-100">
+        {value}
+      </dd>
+    </div>
   );
 }
 

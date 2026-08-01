@@ -507,3 +507,335 @@ PROJECT COMPLETE
   runs with `npm run dev`, tests with `npm test`, and deploys to Vercel (Hobby)
   + Supabase (Free) at $0/month for personal use.
 ==============================================================================
+
+
+==============================================================================
+POST-1.0 FEATURE — Per-exercise tracking types (v1.1.0)
+Generated: 2026-06-29
+==============================================================================
+
+WHY
+  Cardio and bodyweight holds were incorrectly logging weight × reps. Each
+  exercise now records the parameters that actually fit it.
+
+TRACKING TYPES
+  weight_reps -> weight, reps                 (strength: machine/free/cable)
+  reps        -> reps                         (bodyweight reps, e.g. Hanging Leg Raise)
+  duration    -> duration (seconds)           (holds, e.g. Plank)
+  cardio      -> duration (min) + machine-specific fields:
+                   Treadmill      -> duration, speed, incline
+                   Stair Climber  -> duration, calories
+                   Bike/Elliptical/Rower/other -> duration, distance, calories
+
+DATABASE
+  Migration 0005_exercise_metrics.sql (additive, idempotent):
+    - exercises.tracking_type, workout_exercises.tracking_type
+    - sets: duration_seconds, distance, speed, incline, calories (all nullable)
+    - classifies the built-in library (cardio -> cardio, Plank -> duration,
+      Hanging Leg Raise -> reps; everything else weight_reps)
+  *** Run 0005 in the Supabase SQL editor (after 0001-0004). ***
+
+APP CHANGES
+  lib/exerciseMetrics.ts  - tracking types, per-exercise field config, inference
+  editor (ExerciseCard)   - renders the correct inputs per exercise
+  ExercisePicker          - custom exercises pick a "Tracks" type (auto-suggested)
+  WorkoutDetailPage       - dynamic per-type set tables; volume/1RM only for strength
+  ProgressPage            - metric options adapt to the exercise (cardio shows
+                            duration/distance/calories; holds show duration)
+  CSV export/import + PDF - carry tracking_type and all metric columns
+  draft hook + workouts API - per-metric set values end to end
+
+VALIDATION (all passing)
+  npm test -> 4 files, 33 tests   typecheck -> 0   lint -> 0   build -> clean
+  dev smoke -> /, /workout/new, /progress, new modules all HTTP 200
+
+ASSUMPTIONS
+  - Cardio duration entered in minutes; holds in seconds (stored as seconds).
+  - Distance in miles, speed in mph, incline in %, energy in kcal (US defaults).
+  - Existing logged sets keep weight/reps; new metric columns default to null.
+==============================================================================
+
+==============================================================================
+GYM TRACKER — BUILD LOG (Auto-save + Exercise Intelligence)
+Generated: 2026-07-25
+==============================================================================
+
+SCOPE
+  Incremental change on top of v1.1.0. Existing architecture, hooks, services,
+  database schema and queries preserved. No migrations required.
+
+------------------------------------------------------------------------------
+FEATURE AUDIT (pre-existing vs. implemented)
+------------------------------------------------------------------------------
+  ALREADY PRESENT — SKIPPED
+    - Offline persistence + paused-mutation resume  (main.tsx, OfflineBanner)
+    - Realtime cross-device sync                    (useRealtimeSync)
+    - Cache refresh after save                      (useWorkouts/useInvalidateWorkouts)
+    - Toast system                                  (ToastProvider/useToast)
+    - Insertion animation keyframes                 (tailwind `animate-fade-in`)
+    - Exercise cards always rendered expanded (no collapse state exists)
+    - PR/1RM math                                   (utils/stats estimateOneRepMax)
+
+  IMPLEMENTED
+    F1 Auto-save (800 ms debounce, dedup, status pill, unload flush)
+    F2 Smart exercise autofill from the most recent session
+    F3 Previous-workout summary + last-performed date
+    F4 Progressive-overload suggestion (informational)
+    F5 Live personal-record indicator (current / new)
+    F6 Single shared cached query for all history lookups
+    F7 Scroll-to, animate, focus-first-field, autofill toast
+
+------------------------------------------------------------------------------
+FILES ADDED
+------------------------------------------------------------------------------
+  src/lib/workoutPayload.ts                       payload build + fingerprint
+  src/hooks/useAutoSave.ts                        debounced save engine
+  src/hooks/useExerciseHistory.ts                 per-exercise history fold
+  src/hooks/useExerciseHistory.test.ts            unit tests (4)
+  src/components/workout/SaveStatusIndicator.tsx  status pill
+  src/components/workout/ExerciseInsights.tsx     previous / suggestion / PR
+
+FILES MODIFIED
+  src/pages/WorkoutEditorPage.tsx                 wiring
+  src/components/workout/ExerciseCard.tsx         insights + focus/animation
+  src/hooks/useWorkoutDraft.ts                    exerciseToDraft(previousSets?)
+  src/hooks/useWorkouts.ts                        useWorkout(id, enabled?)
+  BUILD_LOG.txt                                   this entry
+
+  Untouched: api/*, supabase/migrations/*, all other pages/components.
+
+------------------------------------------------------------------------------
+AUTO-SAVE BEHAVIOUR (debug reference)
+------------------------------------------------------------------------------
+  Trigger      any draft change -> useMemo(buildPayload) -> JSON fingerprint
+  Debounce     800 ms; timer cleared and rescheduled on each change
+  Dedup        write skipped when fingerprint === last persisted fingerprint.
+               The workout id is EXCLUDED from the fingerprint, so the
+               insert -> update transition does not cause a redundant write.
+  Concurrency  one write in flight; edits during a write are coalesced into a
+               single follow-up write (runningRef / queuedRef)
+  First save   INSERT returns an id -> stored in workoutIdRef -> URL replaced
+               with /workout/:id -> all later saves are UPDATEs.
+               `initialised` guard prevents the fetched row from clobbering the
+               live draft; `useWorkout(id, !hydrated)` disables that refetch.
+  Failure      status 'error' + Retry; NOT auto-retried (prevents write loops).
+               Next edit or reconnect reschedules.
+  Offline      detected before dispatch; status 'offline (will sync)'; flushed
+               on reconnect. Existing paused-mutation resume left intact.
+  Unload       flush on visibilitychange->hidden and pagehide (best effort);
+               beforeunload warns while still dirty.
+  Statuses     idle | Saving… | Saved | Offline (will sync) | Save failed
+
+  KNOWN BEHAVIOUR: api/workouts.saveWorkout replaces child rows on update
+  (delete + re-insert). Unchanged by design. Per-field diffing at the row level
+  would require an API/schema rewrite; de-duplication is therefore done at the
+  payload level, which is what prevents redundant writes.
+
+------------------------------------------------------------------------------
+SUGGESTION RULES (F4) — weight_reps only, >= 2 prior sessions
+------------------------------------------------------------------------------
+  increment = 5 lbs (2.5 kg), applied to the top set of the last session
+    reps >= 12 -> weight + increment, 8-10 reps
+    reps >=  8 -> weight + increment, 6-8 reps
+    reps <   8 -> same weight, reps+1 to reps+2
+  Worked example: last 240 x 8 -> "245 lbs x 6-8 reps" (matches spec).
+  Display only; never written into any input.
+
+------------------------------------------------------------------------------
+QUERY BUDGET (F6)
+------------------------------------------------------------------------------
+  Editor page queries: exercises (picker), workouts (shared cache), and — in
+  edit mode only, once — the single workout being edited.
+  useLastWorkout() is no longer called by the editor; the template is derived
+  from the shared workouts list (one query removed). The hook is still exported.
+  History/PR/suggestions are a single memoised fold over the workouts list,
+  keyed by exercise name. No per-exercise queries.
+  Post-save invalidation refreshes `workouts`, which is what feeds the stats.
+
+------------------------------------------------------------------------------
+VALIDATION RESULTS
+------------------------------------------------------------------------------
+  npm install          -> OK
+  npm run lint         -> OK (0 errors, 0 warnings)
+  npm run typecheck    -> OK (0 errors)
+  npm run format:check -> OK
+  npm run test         -> OK (37 tests, 5 files; was 33)
+  npm run build        -> OK (vite build + PWA precache, 24 entries)
+==============================================================================
+
+==============================================================================
+GYM TRACKER — BUILD LOG (Coaching, Header, Set Table, Dashboard & UI Polish)
+Generated: 2026-08-01                                                  v1.2.0
+==============================================================================
+
+SCOPE
+  Incremental change on top of the Auto-save + Exercise Intelligence build.
+  Existing architecture, reducer/hook layer, API layer, database schema and
+  query keys preserved. NO migrations required. No new dependencies.
+
+------------------------------------------------------------------------------
+FEATURE AUDIT (pre-existing vs. implemented)
+------------------------------------------------------------------------------
+  ALREADY PRESENT — SKIPPED OR EXTENDED, NOT REBUILT
+    F3  Dashboard stats engine       computeDashboardStats() reused as-is; only
+                                     monthVolume + personalRecordCount added.
+                                     Total workouts / streak / avg duration /
+                                     favorite exercise / PR list already existed.
+    F6  Previous-session data        useExerciseHistory already folded the
+                                     shared `workouts` cache; reused, not re-queried.
+    F7  Last-performed + PR + count  sessionCount / lastSession / pr already
+                                     existed; only totalSets + avgWeight added.
+    F7  Progressive-overload rules   buildSuggestion() logic preserved verbatim,
+                                     moved into lib/exerciseProgress for reuse.
+    F8  Reduced-motion support       already in styles/index.css.
+    F8  Fade-in animation            already in tailwind.config keyframes.
+    F9  Skip-to-content link         already in AppLayout.
+    F9  Visible focus rings          already a global :focus-visible rule.
+    F9  Menu/dialog ARIA             already present on menus and modals.
+    --  Toasts, offline, realtime, auto-save, code-splitting: untouched.
+
+  IMPLEMENTED
+    F1  Exercise Coaching card (collapsed by default, lazily loaded)
+    F2  Redesigned exercise header (name, category, equipment, previous, PR,
+        suggested next target, coaching / collapse / delete controls)
+    F3  Premium dashboard layout (6 headline tiles + 4 supporting tiles)
+    F4  Modernised workout cards (dividers, category badges, metric strip)
+    F5  Set table with Set | metrics | Previous | Volume + total volume
+    F6  Per-set progress indicators (Progress / Maintaining / Deload)
+    F7  Exercise insight strip at the bottom of every exercise card
+    F8  Typography, spacing, hover, dark-mode and mobile-layout polish
+    F9  ARIA labels, aria-expanded/controls, aria-pressed, region landmarks
+
+------------------------------------------------------------------------------
+FILES ADDED
+------------------------------------------------------------------------------
+  src/lib/coaching.ts                             types, key normaliser, lazy loader
+  src/data/exerciseCoaching.ts                    metadata for all 42 built-ins
+  src/hooks/useExerciseCoaching.ts                per-exercise on-demand lookup
+  src/lib/exerciseProgress.ts                     volume, trend, suggestion helpers
+  src/lib/exerciseProgress.test.ts                unit tests (15)
+  src/components/workout/ExerciseCoachingCard.tsx collapsible coaching panel
+  src/components/workout/SetTable.tsx             set entry table + TrendBadge
+
+FILES MODIFIED
+  src/components/workout/ExerciseCard.tsx         new header, collapse, coaching
+  src/components/workout/ExerciseInsights.tsx     repurposed as the insight strip
+  src/components/workout/WorkoutCard.tsx          modern card treatment
+  src/components/dashboard/StatCard.tsx           tinted icon tile, tones, hover
+  src/pages/DashboardPage.tsx                     premium layout, new tiles
+  src/hooks/useExerciseHistory.ts                 + totalSets, + avgWeight
+  src/hooks/useExerciseHistory.test.ts            + 1 test
+  src/utils/stats.ts                              + monthVolume, + personalRecordCount
+  src/utils/datetime.ts                           + daysSince, + daysAgoLabel
+  src/styles/index.css                            number-spinner reset
+  package.json                                    version 1.2.0
+  BUILD_LOG.txt                                   this entry
+
+  Untouched: api/*, supabase/migrations/*, contexts/*, layouts/*, all auth,
+  history/progress/body/settings pages, csv/pdf utilities, vite config.
+
+------------------------------------------------------------------------------
+IMPLEMENTATION NOTES (debug reference)
+------------------------------------------------------------------------------
+COACHING DATA (F1, Performance)
+  Static only — never written to or read from Supabase, and it adds zero
+  queries. lib/coaching.ts holds the types plus a module-scope cache; the
+  dataset is pulled in with `import('@/data/exerciseCoaching')` the first time
+  any card is expanded, then shared by every other card for the session.
+  Verified in the build output as its own chunk:
+      dist/assets/exerciseCoaching-*.js   29.02 kB (gzip 7.38 kB)
+  Lookup key is `coachingKey()` — lower-cased, whitespace/hyphen normalised —
+  so "Assisted Pull-Up" resolves to "assisted pull up". A coverage check
+  confirms all 42 rows seeded by 0003_seed_exercises.sql have an entry.
+  Custom exercises fall through to "No coaching information available."
+
+EXERCISE HEADER (F2)
+  Row 1: position, name, unit toggle (sm+), coaching / collapse / overflow /
+  delete controls. Row 2: category + equipment badges. Row 3: a three-cell
+  definition list — Previous, Personal record, Suggested next target — which
+  only renders the cells it has data for. Delete was promoted out of the
+  overflow menu; duplicate, move and note stay in it. The unit toggle moves
+  into the card body below `sm` so the header never crowds on a phone.
+  The PR cell doubles as the live indicator: it turns flame for a new PR and
+  amber when the current session matches it (previously a separate banner).
+
+SET TABLE (F5, F6)
+  Columns are Set | <metric inputs> | Previous | Volume, driven by the existing
+  metricFields() config, so cardio and hold exercises keep their own inputs and
+  simply omit the Volume column. Volume is derived live from the controlled
+  inputs (weight × reps) — no state, no query — and the exercise total renders
+  beneath the table. "Previous" is the same-index set from the most recent
+  earlier session, already available in the shared history fold.
+  Trend badges compare today's load with that previous set:
+      higher -> 📈 Progress    equal -> ➡ Maintaining    lower -> ⬇ Deload
+  Nothing renders until both values exist, so an empty row stays quiet.
+  RESPONSIVE MECHANIC: two grid templates are passed as CSS custom properties
+  (--set-cols / --set-cols-sm) and selected with
+  `grid-cols-[var(--set-cols)] sm:grid-cols-[var(--set-cols-sm)]`. Below `sm`
+  the Previous/Volume cells are display:none and collapse out of the grid flow,
+  and the same figures appear on a summary line underneath, which keeps the
+  number inputs finger-sized on a phone. If a column ever looks misaligned,
+  check that the hidden cells and the template column count still agree.
+
+INSIGHTS (F7)
+  ExerciseInsights was repurposed rather than duplicated: the previous-session
+  list it used to render now lives in the table's Previous column, and the
+  suggestion/PR blocks moved to the header. It now renders one small strip —
+  times performed, average working weight, personal record, last performed —
+  entirely from useExerciseHistory. totalSets and avgWeight were added to that
+  fold as running accumulators in the existing single pass; no new traversal.
+
+DASHBOARD (F3)
+  Same data source and the same computeDashboardStats() call. Two labelled
+  sections: six headline tiles (total workouts, streak, personal records,
+  monthly volume, average workout time, favorite exercise) and four supporting
+  tiles (this week, this month, total volume, most used). Nothing was removed.
+  monthVolume and personalRecordCount are accumulated inside the existing loop.
+  No charts were added to the dashboard: it had none, and importing Recharts
+  here would pull the ~82 kB (gzip) lazy chart chunk into the landing route.
+  Chart cards on /progress and /body already use the elevated Card surface.
+
+ACCESSIBILITY (F9)
+  - Coaching and collapse buttons carry aria-expanded + aria-controls; the
+    coaching panel is a role="region" labelled by its toggle.
+  - Unit toggles are a labelled role="group" with aria-pressed buttons.
+  - Every set input has an aria-label naming the field, set number and exercise.
+  - Icon-only controls have both aria-label and title, and name the exercise.
+  - Collapsed bodies use the `hidden` attribute, so they leave the a11y tree
+    and the tab order rather than just disappearing visually.
+  - Dashboard tiles group under labelled <section> landmarks; metric strips use
+    <dl>/<dt>/<dd>; emoji in trend badges are aria-hidden with a text label.
+
+UI POLISH (F8)
+  Consistent 4/5 padding scale, uppercase micro-labels, tabular numerals on all
+  figures, section dividers instead of loose spacing, subtle hover lift on
+  cards, and native number spinners removed (they shrank the tap target).
+  Skeletons now reserve the hint line so tiles do not jump when data lands.
+
+------------------------------------------------------------------------------
+VALIDATION RESULTS (all passing)
+------------------------------------------------------------------------------
+  npm install          -> OK (no new dependencies)
+  npm run lint         -> OK (0 errors, 0 warnings)
+  npm run typecheck    -> OK (0 errors)
+  npm run format:check -> OK
+  npm run test         -> OK (53 tests, 6 files; was 37/5)
+  npm run build        -> OK, no chunk warning
+                          new: exerciseCoaching chunk 29.02 kB (gzip 7.38 kB)
+                          PWA generateSW precached 25 entries (was 24)
+  dev smoke            -> HTTP 200 on /, main.tsx, ExerciseCard, SetTable,
+                          ExerciseCoachingCard, exerciseCoaching data,
+                          exerciseProgress, useExerciseCoaching, DashboardPage
+
+TROUBLESHOOTING
+  - Coaching card shows "No coaching information available." for a built-in:
+      the name no longer matches the seed data. Compare coachingKey(name)
+      against the keys in src/data/exerciseCoaching.ts.
+  - Previous/Volume columns missing on a wide screen:
+      confirm Tailwind emitted grid-template-columns:var(--set-cols-sm); the
+      arbitrary class must appear literally in SetTable.tsx for the scanner.
+  - Volume column absent: expected for reps/duration/cardio exercises, which
+    have no weight × reps product.
+  - No suggestion shown: requires a weight_reps exercise with >= 2 prior
+    sessions (unchanged rule).
+==============================================================================

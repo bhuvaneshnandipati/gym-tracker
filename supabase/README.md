@@ -11,10 +11,11 @@ client lives in `src/lib/supabase.ts`; SQL migrations live in `migrations/`.
    - **anon / public key** → `VITE_SUPABASE_ANON_KEY`
 3. Put both in your `.env` (and in Vercel's environment variables for deploys).
 
-## 2. Apply the database migration
+## 2. Apply the database migrations
 
-In the Supabase dashboard, open **SQL Editor**, paste the contents of
-`migrations/0001_profiles.sql`, and run it. This creates:
+In the Supabase dashboard, open **SQL Editor** and run every file in
+`migrations/` in numeric order (see the index at the bottom). The first one,
+`0001_profiles.sql`, creates:
 
 - a `profiles` table (1:1 with `auth.users`),
 - Row Level Security so each user only sees their own row,
@@ -61,6 +62,6 @@ the tab closes). See `src/lib/supabase.ts`.
 | `0002_workouts.sql`       | Exercises, workouts, workout_exercises, sets + RLS + indexes |
 | `0003_seed_exercises.sql` | Built-in exercise library (idempotent seed)       |
 | `0004_body_metrics.sql`   | Body metrics table + RLS + realtime publication   |
+| `0005_exercise_metrics.sql` | Per-exercise tracking types + cardio/duration set columns |
 
-Apply migrations in numeric order. Body-metric tables are added in a later
-migration (Milestone 6).
+Apply migrations in numeric order (0001 → 0005).

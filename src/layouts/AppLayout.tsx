@@ -4,6 +4,7 @@ import { TopBar } from '@/components/TopBar';
 import { MobileNav } from '@/components/MobileNav';
 import { FloatingActionButton } from '@/components/FloatingActionButton';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { MiniTimerPill } from '@/components/timer/MiniTimerPill';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 
 /** The shell wrapping every authenticated app route. */
@@ -37,6 +38,7 @@ export function AppLayout() {
       </div>
 
       <MobileNav />
+      <MiniTimerPill />
       <FloatingActionButton />
     </div>
   );

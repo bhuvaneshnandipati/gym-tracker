@@ -24,6 +24,8 @@ const ProgressPage = lazy(() =>
 const BodyMetricsPage = lazy(() =>
   import('@/pages/BodyMetricsPage').then((m) => ({ default: m.BodyMetricsPage })),
 );
+// The timer panels are only needed on /timer; the provider and mini pill stay eager.
+const TimerPage = lazy(() => import('@/pages/TimerPage').then((m) => ({ default: m.TimerPage })));
 
 export function App() {
   return (
@@ -45,6 +47,7 @@ export function App() {
           <Route element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="history" element={<HistoryPage />} />
+            <Route path="timer" element={<TimerPage />} />
             <Route path="progress" element={<ProgressPage />} />
             <Route path="body" element={<BodyMetricsPage />} />
             <Route path="settings" element={<SettingsPage />} />

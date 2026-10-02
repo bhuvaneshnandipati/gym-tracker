@@ -44,7 +44,14 @@ No new dependencies were added. Sounds are generated with the Web Audio API, so 
 A floating pill (bottom-left, above the nav) shows whichever timer is most relevant: rest → intervals → stopwatch. Tap it to open that timer's tab. A finished rest turns the pill green with a dismiss (×) button. The pill is hidden on the Timer page itself.
 
 ### Alerts
-The **Alerts** card on the Timer page turns sound and vibration on or off. Both settings are saved. Vibration is greyed out where the browser doesn't support it (for example iPhone Safari).
+The **Alerts** card on the Timer page has four saved settings:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Sound | On | Beeps described above. |
+| Vibration | On | Buzzes on the same events. Greyed out where unsupported (iPhone Safari). |
+| Keep screen on | On | Holds a screen wake lock while any timer runs, so the phone doesn't dim or lock mid-rest and the alert plays on time. Released as soon as nothing is running. No permission prompt. |
+| Rest notifications | Off | When rest ends while you're in another app or tab, shows a system notification ("Rest finished — Time for your next set."). Turning it on asks for notification permission once. Tapping the notification brings the app back. The notification clears itself when you return. |
 
 ---
 
@@ -83,6 +90,12 @@ This follows the existing context pattern (`theme-context.ts` + `ThemeProvider.t
 - Every icon-only control has an `aria-label`. Tabs follow the WAI-ARIA tabs pattern (arrow keys, Home/End). Sound and vibration are `role="switch"` toggles, presets use `aria-pressed`, and session progress is a `progressbar`.
 - Controls are 56 px tall (`BigButton`), set-row buttons are 36 px (the same as the existing remove button), and everything matches the flame/iron palette in light and dark mode. Animations respect the app's existing `prefers-reduced-motion` rule.
 
+### Keep screen on (Wake Lock)
+`src/lib/wakeLock.ts` wraps the Screen Wake Lock API in a small controller. The provider asks for the lock whenever *a timer is running and Keep screen on is enabled*. Browsers drop the lock when the page is hidden, so the controller takes it again on `visibilitychange`. Requests already in flight are released if the lock stops being wanted, and duplicate requests are never stacked. It does nothing where the API is missing.
+
+### Rest notifications
+`src/lib/timerNotify.ts` shows the notification through the service worker registration when there is one. This is required on Android Chrome, where `new Notification()` from a page throws. Without a service worker (local dev) it falls back to the page API. It only fires when the page is hidden at the moment rest ends. `public/sw-notifications.js` is pulled into the generated service worker via `workbox.importScripts` in `vite.config.ts`, and handles notification taps. It only *focuses* an open window, deliberately not navigating it, so an unsaved workout draft is never reloaded away.
+
 ### Debug logging
 `src/lib/timerLogger.ts` provides a small logger with no new dependency:
 
@@ -90,6 +103,7 @@ This follows the existing context pattern (`theme-context.ts` + `ThemeProvider.t
 - It prints `[timer] …` debug lines in development, or in production after you run `localStorage.setItem('gym-tracker:debug', 'timers')` in the console and reload.
 - While debugging is on, `window.__gymTrackerTimerLog()` returns the buffer as text you can paste into an issue.
 - Warnings and errors (storage or audio failures) always reach the console.
+- Wake lock and notifications log `wakelock.acquired` / `wakelock.released` / `wakelock.request_failed` and `notify.permission` / `notify.rest_done` / `notify.show_failed`.
 - Logged events include every action (`rest/start`, `interval/skip`, …), transitions (`rest.finished`, `interval.phase` with `lateMs`), audio scheduling and unlocks, and `workout.saved_with_stopwatch`.
 
 ---
@@ -111,6 +125,10 @@ This follows the existing context pattern (`theme-context.ts` + `ThemeProvider.t
 | `src/pages/TimerPage.tsx` | Timer page with Rest / Stopwatch / Intervals tabs (`?mode=`) and Alerts settings. Lazy-loaded. |
 | `src/components/timer/*` | `RestTimerPanel`, `StopwatchPanel`, `IntervalTimerPanel`, `TimerReadout` (ring + digits), `TimerControls` (`BigButton`, `Switch`), `MiniTimerPill`. |
 | `src/components/workout/WorkoutSessionTimer.tsx` | Duration row in the editor, linked to the stopwatch. |
+| `src/components/timer/TimerAlertsCard.tsx` | Sound / vibration / keep screen on / notifications settings, including the permission flow. |
+| `src/lib/wakeLock.ts`, `src/lib/wakeLock.test.ts` | Wake lock controller and 5 tests (acquire/release, no stacking, re-acquire after the page is hidden, late grant, unsupported). |
+| `src/lib/timerNotify.ts` | Permission request, show/clear the rest-finished notification. |
+| `public/sw-notifications.js` | Service-worker handler that focuses the app when a notification is tapped. |
 
 ### Modified
 | File | Change |
@@ -123,6 +141,7 @@ This follows the existing context pattern (`theme-context.ts` + `ThemeProvider.t
 | `src/hooks/useWorkoutDraft.ts` | `activeDurationSeconds` on the draft, `patchSession` action, keeps a stored stopwatch duration when editing. |
 | `src/lib/workoutPayload.ts` | Saves `activeDurationSeconds` as `durationSeconds` when present, otherwise end − start as before. |
 | `src/pages/WorkoutEditorPage.tsx` | Uses `WorkoutSessionTimer`. Links the stopwatch to the new workout id on first auto-save. On save, writes the stopwatch time and resets it. |
+| `vite.config.ts` | `workbox.importScripts: ['sw-notifications.js']`. |
 | `BUILD_LOG.txt` | Timer milestone entry. |
 
 No database migration is needed: `workouts.duration_seconds` already exists.
@@ -130,6 +149,7 @@ No database migration is needed: `workouts.duration_seconds` already exists.
 ---
 
 ## Known limitations
-- **Phone fully locked:** iOS (and some Android power modes) suspend web pages, including audio, so a beep that falls while the screen is locked may not play. The timer is still correct the moment you return, and you'll get the announcement and the finished state. Installing the PWA to the home screen helps on Android.
+- **Phone locked by hand:** *Keep screen on* stops the phone locking itself, but if you press the power button, iOS (and some Android power modes) suspend the page, including audio, so a beep due while locked may not play. The timer is still correct the moment you return. Some battery-saver modes also refuse the wake lock.
+- **Rest notifications** need the browser to still be running the page in the background. Android Chrome does for short periods, which covers typical rests. iPhone needs the app added to the Home Screen (iOS 16.4+), and you install it as a PWA.
 - **Vibration** isn't available in iPhone Safari (no Web Vibration API).
 - Changing the device clock while a timer runs shifts it (see *Accuracy*).

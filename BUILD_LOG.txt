@@ -922,4 +922,23 @@ TROUBLESHOOTING
     or to the saved workout it was linked to on first auto-save. Check
     stopwatch.linkedWorkoutId in localStorage['gym-tracker:timers'].
   - Reset all timer state: localStorage.removeItem('gym-tracker:timers').
+
+ADDENDUM — Keep screen on + rest notifications
+  - src/lib/wakeLock.ts: Screen Wake Lock held while any timer runs (setting
+    keepAwake, default on); re-acquired on visibilitychange; no-op if missing.
+  - src/lib/timerNotify.ts: opt-in notification (setting notifications,
+    default off) when rest ends while the page is hidden. Uses the service
+    worker registration (required on Android), falls back to new Notification.
+  - public/sw-notifications.js imported via workbox.importScripts; tap focuses
+    the app (never navigates, so unsaved drafts are safe).
+  - New settings default safely for state saved before this change.
+  Validation: npm test 96 passed (9 files) · build OK, dist/sw.js contains
+  importScripts("sw-notifications.js") · eslint src clean · format OK ·
+  Playwright 7/7 (wake lock requested while running and not when off;
+  permission flow; notification only when hidden).
+  Troubleshooting:
+  - Screen still dims: battery saver can refuse the lock (log:
+    wakelock.request_failed NotAllowedError).
+  - Notifications toggle disabled: permission denied in site settings, or
+    iPhone Safari without Home Screen install.
 ==============================================================================

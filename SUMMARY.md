@@ -14,6 +14,7 @@
 - Web Audio cues: a distinct sound per phase plus 3-2-1 beeps, pre-scheduled on the audio clock so background throttling doesn't delay them. Vibration where supported.
 - Accessibility: `role="timer"` readouts, a live-region announcements area, aria labels, keyboard-navigable tabs and 56 px controls. Light and dark mode.
 - Workout editor integration: a rest button per set and a session timer row; save writes the stopwatch duration.
+- **Keep screen on** (Wake Lock, on by default) while any timer runs, and opt-in **rest notifications** when the app is in the background. Both are toggles in the Timer page's Alerts card.
 - Debug logger (`src/lib/timerLogger.ts`) and a new section in `BUILD_LOG.txt`.
 - Docs: `TIMER_FEATURE.md` (how it works, files changed, how to use it).
 - **No new dependencies. No database migration.**
@@ -21,14 +22,17 @@
 ## Verification
 | Check | Result |
 | --- | --- |
-| `npm test` | 91 passed (38 new across 2 files) |
+| `npm test` | 96 passed (43 new across 3 files) |
 | `npm run build` (`tsc -b` + Vite + PWA) | Pass |
 | `npm run format:check` | Pass |
 | `eslint src` | 0 problems |
 | `npm run lint` | 24 problems, all pre-existing and unchanged from `main` (see below) |
-| Playwright smoke test (mobile + desktop, light + dark, fake clock) | 19/19 checks pass |
+| Playwright smoke test (mobile + desktop, light + dark, fake clock) | 19/19 checks pass, plus 7/7 for keep screen on and notifications |
 
-## Issues found in the repo (not changed, need your call)
+## Issues found in the repo (left unchanged on this branch)
 1. **Stray files in the repo root.** About 75 older copies of source files (e.g. `./App.tsx`, `./pdf.ts`, `./useWorkouts.ts`, `./csv.test.ts`) were uploaded next to `src/`. They differ from the `src/` versions, and they're why `npm run lint` fails on `main`. Deleting them, or adding them to ESLint's ignores, would make lint pass again.
 2. **`README.md` contains the source of `src/utils/datetime.ts`** instead of a README.
 3. **`npm run typecheck` checks no files.** The root `tsconfig.json` has `"files": []`. `tsc -b`, which `npm run build` runs, is the real type check. Changing the script to `tsc -b` would fix it.
+
+## Follow-up: repo cleanup
+All three issues are fixed on a separate branch, `chore/repo-cleanup` (based on `main`), so it can be reviewed on its own.

@@ -7,6 +7,7 @@ import { App } from '@/App';
 import { ThemeProvider } from '@/contexts/ThemeProvider';
 import { AuthProvider } from '@/contexts/AuthProvider';
 import { ToastProvider } from '@/contexts/ToastProvider';
+import { TimerProvider } from '@/contexts/TimerProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { MissingSupabaseConfig } from '@/components/MissingSupabaseConfig';
 import { initTheme } from '@/lib/theme-init';
@@ -40,9 +41,11 @@ createRoot(container).render(
               persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}
             >
               <AuthProvider>
-                <BrowserRouter>
-                  <App />
-                </BrowserRouter>
+                <TimerProvider>
+                  <BrowserRouter>
+                    <App />
+                  </BrowserRouter>
+                </TimerProvider>
               </AuthProvider>
             </PersistQueryClientProvider>
           ) : (

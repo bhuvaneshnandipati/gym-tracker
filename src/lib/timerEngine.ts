@@ -93,6 +93,10 @@ export interface IntervalState {
 export interface TimerSettings {
   sound: boolean;
   vibration: boolean;
+  /** Hold a screen wake lock while any timer runs. */
+  keepAwake: boolean;
+  /** System notification when rest ends while the app is in the background. */
+  notifications: boolean;
 }
 
 export interface TimerState {
@@ -221,7 +225,7 @@ export function createInitialTimerState(): TimerState {
       accumulatedMs: 0,
       finishedAt: null,
     },
-    settings: { sound: true, vibration: true },
+    settings: { sound: true, vibration: true, keepAwake: true, notifications: false },
   };
 }
 
@@ -569,6 +573,8 @@ export function parseTimerState(raw: string | null): TimerState {
     settings: {
       sound: typeof st.sound === 'boolean' ? st.sound : true,
       vibration: typeof st.vibration === 'boolean' ? st.vibration : true,
+      keepAwake: typeof st.keepAwake === 'boolean' ? st.keepAwake : true,
+      notifications: typeof st.notifications === 'boolean' ? st.notifications : false,
     },
   };
 }

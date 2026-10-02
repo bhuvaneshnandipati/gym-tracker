@@ -296,7 +296,12 @@ describe('persistence', () => {
     expect(st.stopwatch.status).toBe('paused');
     expect(st.interval.status).toBe('idle');
     expect(st.interval.config.rounds).toBe(8);
-    expect(st.settings).toEqual({ sound: false, vibration: true });
+    expect(st.settings).toEqual({
+      sound: false,
+      vibration: true,
+      keepAwake: true,
+      notifications: false,
+    });
   });
 });
 

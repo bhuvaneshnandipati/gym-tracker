@@ -2,13 +2,11 @@ import { useRef, type KeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Hourglass, Repeat, Timer as TimerIcon } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
-import { Card } from '@/components/ui/Card';
 import { RestTimerPanel } from '@/components/timer/RestTimerPanel';
 import { StopwatchPanel } from '@/components/timer/StopwatchPanel';
 import { IntervalTimerPanel } from '@/components/timer/IntervalTimerPanel';
-import { Switch } from '@/components/timer/TimerControls';
-import { useTimerActions, useTimerState } from '@/hooks/useTimers';
-import { isVibrationSupported, playCueNow, vibrate } from '@/lib/timerSound';
+import { TimerAlertsCard } from '@/components/timer/TimerAlertsCard';
+import { useTimerState } from '@/hooks/useTimers';
 import { cn } from '@/utils/cn';
 
 type Mode = 'rest' | 'stopwatch' | 'interval';
@@ -26,7 +24,6 @@ export function TimerPage() {
   const [params, setParams] = useSearchParams();
   const mode: Mode = isMode(params.get('mode')) ? (params.get('mode') as Mode) : 'rest';
   const { state, interval } = useTimerState();
-  const { updateSettings } = useTimerActions();
   const tabRefs = useRef<Record<Mode, HTMLButtonElement | null>>({
     rest: null,
     stopwatch: null,
@@ -116,36 +113,7 @@ export function TimerPage() {
         {mode === 'interval' ? <IntervalTimerPanel /> : null}
       </div>
 
-      <Card className="mt-4">
-        <h2 className="mb-1 text-base font-semibold tracking-tight text-iron-900 dark:text-iron-50">
-          Alerts
-        </h2>
-        <div className="divide-y divide-iron-100 dark:divide-iron-800">
-          <Switch
-            label="Sound"
-            description="Beeps for rest end, phase changes and the 3-2-1 countdown."
-            checked={state.settings.sound}
-            onChange={(sound) => {
-              updateSettings({ sound });
-              if (sound) playCueNow('tick', true);
-            }}
-          />
-          <Switch
-            label="Vibration"
-            description={
-              isVibrationSupported()
-                ? 'Buzz on the same events (Android and other supported browsers).'
-                : 'Not supported by this browser (for example iPhone Safari).'
-            }
-            checked={state.settings.vibration}
-            disabled={!isVibrationSupported()}
-            onChange={(vibration) => {
-              updateSettings({ vibration });
-              if (vibration) vibrate('tick', true);
-            }}
-          />
-        </div>
-      </Card>
+      <TimerAlertsCard />
     </>
   );
 }

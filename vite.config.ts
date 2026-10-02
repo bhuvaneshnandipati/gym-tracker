@@ -31,6 +31,8 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/auth/, /supabase/],
         cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        // Handles taps on timer notifications (see src/lib/timerNotify.ts).
+        importScripts: ['sw-notifications.js'],
       },
       devOptions: { enabled: false },
     }),

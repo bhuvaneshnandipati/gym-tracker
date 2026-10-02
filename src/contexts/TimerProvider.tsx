@@ -40,6 +40,8 @@ import {
   vibrate,
 } from '@/lib/timerSound';
 import { timerLog } from '@/lib/timerLogger';
+import { createWakeLockController } from '@/lib/wakeLock';
+import { clearRestNotification, showRestDoneNotification } from '@/lib/timerNotify';
 
 /** How often the display refreshes while something is running. */
 const TICK_MS = 250;
@@ -129,6 +131,37 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
+  // -------------------------------------------------------------- wake lock
+  // Keep the screen on while anything runs so the page isn't suspended by
+  // the phone locking (the main cause of missed beeps).
+  const wakeLock = useRef<ReturnType<typeof createWakeLockController> | null>(null);
+  useEffect(() => {
+    const controller = createWakeLockController();
+    wakeLock.current = controller;
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') controller.onVisible();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      controller.dispose();
+      wakeLock.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    wakeLock.current?.setWanted(anyRunning && state.settings.keepAwake);
+  }, [anyRunning, state.settings.keepAwake]);
+
+  // A "Rest finished" notification is stale once the user is back in the app.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void clearRestNotification();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   // ------------------------------------------------------------------ audio
   // Browsers need a gesture before audio can play; after a reload, the first
   // tap anywhere re-enables scheduled cues.
@@ -194,8 +227,18 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       timerLog.info('rest.finished', { lateMs: late });
       if (late < STALE_MS) vibrate('restDone', state.settings.vibration);
       announce('Rest finished. Time for your next set.');
+      // Only worth a system notification when the app isn't in front.
+      if (state.settings.notifications && document.visibilityState === 'hidden') {
+        void showRestDoneNotification();
+      }
     }
-  }, [state.rest.status, state.rest.finishedAt, state.settings.vibration, announce]);
+  }, [
+    state.rest.status,
+    state.rest.finishedAt,
+    state.settings.vibration,
+    state.settings.notifications,
+    announce,
+  ]);
 
   const prevSegment = useRef(`${snapshot.status}:${snapshot.segmentIndex}`);
   const lastTickSecond = useRef<number | null>(null);

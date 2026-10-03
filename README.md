@@ -1,80 +1,94 @@
-/** Date/time helpers used by the workout editor and lists. */
+# Gym Tracker
 
-/** Today's date as a local YYYY-MM-DD string. */
-export function todayISODate(): string {
-  const now = new Date();
-  const offset = now.getTimezoneOffset();
-  const local = new Date(now.getTime() - offset * 60_000);
-  return local.toISOString().slice(0, 10);
-}
+Track every gym session, log your sets, and watch your strength climb.
 
-/** Current local time as HH:MM. */
-export function nowTimeHHMM(): string {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-}
+A mobile-first progressive web app built with **React 18, TypeScript, Vite, Tailwind CSS and Supabase**. Version **1.2.0**.
 
-/** Combine a YYYY-MM-DD date and HH:MM time into an ISO timestamp, or null. */
-export function combineDateTime(date: string, time: string): string | null {
-  if (!date || !time) return null;
-  const dt = new Date(`${date}T${time}`);
-  return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
-}
+## Features
 
-/** Extract HH:MM (local) from an ISO timestamp, or '' when null. */
-export function timeFromISO(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
+- **Workout logging.** Add exercises from a built-in library or your own. Each exercise records the right fields for its type: weight × reps, reps only, timed holds, or cardio (duration, distance, speed, incline, calories). Sets auto-save as you type and work offline.
+- **Exercise intelligence.** Your previous session pre-fills new sets. Each set shows a trend badge (progress, maintaining or deload). There are live volume totals and per-exercise coaching notes.
+- **Dashboard and history.** Streaks, weekly stats and recent sessions. Search and filter past workouts, then open, edit or delete them.
+- **Progress analytics.** Charts per exercise (weight, volume, estimated 1RM, duration, distance), a personal-record timeline and training frequency.
+- **Body metrics.** Track weight, body fat, measurements and calories over time.
+- **Import and export.** CSV export and import, and a PDF report.
+- **Accounts.** Email/password and Google sign-in, password reset and "remember me". Row Level Security keeps every user's data private.
+- **Realtime sync** across devices.
+- **Offline-ready PWA.** Installable, caches the app shell and your loaded data.
+- **Light, dark and system themes,** keyboard and screen-reader friendly.
 
-/** Seconds between a start and end time on the same date (handles past-midnight). */
-export function durationSeconds(date: string, start: string, end: string): number | null {
-  const s = combineDateTime(date, start);
-  const e = combineDateTime(date, end);
-  if (!s || !e) return null;
-  let diff = (new Date(e).getTime() - new Date(s).getTime()) / 1000;
-  if (diff < 0) diff += 24 * 3600; // assume the session ran past midnight
-  return Math.round(diff);
-}
+## Quick start
 
-/** Human duration like "1h 12m" or "45m". */
-export function formatDuration(seconds: number | null): string {
-  if (seconds == null || seconds <= 0) return '—';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.round((seconds % 3600) / 60);
-  if (h && m) return `${h}h ${m}m`;
-  if (h) return `${h}h`;
-  return `${m}m`;
-}
+Requires **Node.js 20+** (see `.nvmrc`).
 
-/** Friendly date like "Mon, Jun 24". */
-export function formatDateShort(dateISO: string): string {
-  const d = new Date(`${dateISO}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return dateISO;
-  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-}
+```bash
+npm install
+cp .env.example .env      # Windows: copy .env.example .env
+# fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+npm run dev               # http://localhost:5173
+```
 
-/** Full date like "Monday, June 24, 2026". */
-export function formatDateLong(dateISO: string): string {
-  const d = new Date(`${dateISO}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return dateISO;
-  return d.toLocaleDateString(undefined, {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-}
+Without Supabase credentials the app shows a setup screen instead of the login page.
 
-/** Format a number of seconds as a clock: "0:45", "12:00", "1:05:30". */
-export function formatClock(totalSeconds: number | null): string {
-  if (totalSeconds == null) return '—';
-  const s = Math.max(0, Math.round(totalSeconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
-}
+### Supabase setup
+
+1. Create a free project at [supabase.com](https://supabase.com) and copy the **Project URL** and **anon key** into `.env`.
+2. In the SQL editor, run the migrations in `supabase/migrations/` **in numeric order** (`0001` → `0005`).
+3. Configure the auth providers and redirect URLs.
+
+Step-by-step details are in [`supabase/README.md`](supabase/README.md).
+
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the Vite dev server |
+| `npm run build` | Type-check (`tsc -b`) and build for production into `dist/` |
+| `npm run preview` | Serve the production build locally |
+| `npm test` / `npm run test:watch` | Run the Vitest unit tests once, or in watch mode |
+| `npm run typecheck` | Type-check the app and config (`tsc -b`) |
+| `npm run lint` / `npm run lint:fix` | ESLint |
+| `npm run format` / `npm run format:check` | Prettier |
+
+## Project structure
+
+```
+src/
+  api/          Supabase data access (workouts, exercises, body metrics)
+  components/   UI: ui/ primitives, workout/, charts/, dashboard/, auth/
+  contexts/     React context providers (auth, theme, toasts)
+  data/         Static data (exercise coaching notes)
+  hooks/        Data and behaviour hooks (TanStack Query, auto-save, drafts…)
+  layouts/      App shell (sidebar, top bar, mobile nav)
+  lib/          Domain logic and config (metrics, progress, env, Supabase client)
+  pages/        Route components
+  styles/       Tailwind entry and global styles
+  types/        Shared TypeScript types
+  utils/        Pure helpers (dates, numbers, CSV, PDF, stats)
+supabase/       SQL migrations and backend setup guide
+public/         PWA icons and favicon
+```
+
+The `@/` import alias points to `src/`.
+
+## Tech stack
+
+| Area | Choice |
+| --- | --- |
+| UI | React 18, React Router 6, Tailwind CSS 3, lucide-react icons |
+| Data | Supabase (Postgres, Auth, Realtime), TanStack Query with persisted cache |
+| Forms | react-hook-form + zod |
+| Charts / export | Recharts, jsPDF, Papa Parse |
+| Tooling | Vite 5, TypeScript (strict), ESLint 9, Prettier 3, Vitest 2, vite-plugin-pwa |
+
+## Deployment
+
+The app is set up for **Vercel**: `vercel.json` rewrites all routes to `index.html` for client-side routing.
+
+1. Import the repo into Vercel (framework preset: Vite).
+2. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (and optionally `VITE_APP_NAME`) as environment variables.
+3. Add your production URL to Supabase's **Site URL** and **Redirect URLs**.
+
+## Troubleshooting
+
+Build notes, validation results and troubleshooting tips for each milestone are in [`BUILD_LOG.txt`](BUILD_LOG.txt).

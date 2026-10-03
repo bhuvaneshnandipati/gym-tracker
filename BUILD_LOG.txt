@@ -839,3 +839,106 @@ TROUBLESHOOTING
   - No suggestion shown: requires a weight_reps exercise with >= 2 prior
     sessions (unchanged rule).
 ==============================================================================
+
+==============================================================================
+GYM TRACKER — BUILD LOG (Timers: Rest, Workout Stopwatch, Intervals)
+Generated: 2026-10-02                                    branch feature/timers
+==============================================================================
+
+SCOPE
+  New Timer tab (/timer) with a rest countdown, a workout stopwatch and an
+  interval/HIIT timer, plus a one-tap rest button on every set row and a
+  floating mini timer on other screens. Full write-up: TIMER_FEATURE.md.
+
+DECISIONS (confirmed with the owner before building)
+  - Navigation: Timer is the 3rd item. Settings is hidden from the phone bottom
+    bar only (NavItem.mobile = false); still in the sidebar and avatar menu.
+  - Stopwatch -> workout: the stopwatch's active time (pauses excluded) is saved
+    as workouts.duration_seconds; empty start/end times are filled from it.
+  - One-tap rest: hourglass button per set row, using the last rest length.
+  - Floating mini pill shows the running timer on other screens.
+
+DESIGN NOTES
+  - Timestamp-based (Date.now): endsAt / runningSince + accumulatedMs. No tick
+    counting, so sleep, background throttling and reloads never drift.
+    performance.now() is not used because it resets on every page load.
+  - State persisted to localStorage key gym-tracker:timers (versioned, parsed
+    defensively). 'storage' event keeps multiple tabs in sync.
+  - Two contexts (actions vs live state) so set rows / the editor do not
+    re-render on the 250 ms display tick.
+  - Audio cues pre-scheduled on the Web Audio clock (survives JS throttling);
+    deferred until the AudioContext is unlocked by a gesture.
+  - No new dependencies. No database migration (duration_seconds existed).
+
+DEBUG LOGGING  (src/lib/timerLogger.ts)
+  - Ring buffer of the last 200 events, always on.
+  - Console output in dev, or in prod after:
+      localStorage.setItem('gym-tracker:debug', 'timers')   then reload
+  - window.__gymTrackerTimerLog() dumps the buffer as text while enabled.
+  - Key events: rest/start, rest/adjust, rest.finished {lateMs},
+    interval/start, interval.phase {kind, round, lateMs}, interval.finished,
+    audio.scheduled {channel, cues, contextState}, audio.schedule_deferred,
+    audio.unlocked, state.load_failed / state.save_failed,
+    workout.saved_with_stopwatch {seconds}.
+
+------------------------------------------------------------------------------
+VALIDATION RESULTS
+------------------------------------------------------------------------------
+  npm ci               -> OK (no new dependencies)
+  npm run test         -> OK (91 tests, 8 files; was 53/6)
+  npm run build        -> OK (tsc -b + vite build, PWA precache 25 entries)
+                          new lazy chunk TimerPage 18.49 kB (gzip 5.55 kB)
+                          index 141.13 kB (gzip 39.97 kB; was 116.22/32.55)
+  npm run format:check -> OK
+  npm run typecheck    -> OK (note: root tsconfig has "files": [], so this
+                          checks nothing; `tsc -b` inside build is the real
+                          type check and passes)
+  eslint src           -> OK (0 errors, 0 warnings)
+  npm run lint         -> 14 errors / 10 warnings, ALL PRE-EXISTING and
+                          identical to main: they come from stray copies of
+                          source files in the repo root (e.g. ./pdf.ts,
+                          ./useWorkouts.ts) that ESLint parses without JSX
+                          support. Nothing under src/ is reported.
+  Browser smoke test   -> Playwright (Chromium, 390x844 mobile + 1280 desktop,
+                          light + dark) with a fake clock, 19/19 checks:
+                          rest after 40 s "sleep" exact, ±15s, survives reload,
+                          finish caption + SR announcement, stopwatch excludes
+                          pause, mini pill priority + dismiss, one-tap rest
+                          from a set, interval phases/rounds/announcements,
+                          skip, completion, localStorage persistence. Audio
+                          cue offsets verified (work 3s/rest 2s/2 rounds:
+                          ticks at 1,2 · rest 3 · tick 4 · work 5 · ticks 6,7 ·
+                          done 8). No console errors from timer code.
+
+TROUBLESHOOTING
+  - No beep after a page reload: browsers block audio until the first tap;
+    any tap re-enables it (log: audio.schedule_deferred -> audio.unlocked).
+  - No vibration: unsupported in iPhone Safari; elsewhere blocked until the
+    user has tapped the page. Late transitions (>5 s, e.g. phone asleep) skip
+    vibration on purpose.
+  - Beep missing while the phone is locked: the OS suspended the page. Timer
+    values are still correct on return (timestamp-based).
+  - Workout duration not from the stopwatch: it only applies to a NEW workout,
+    or to the saved workout it was linked to on first auto-save. Check
+    stopwatch.linkedWorkoutId in localStorage['gym-tracker:timers'].
+  - Reset all timer state: localStorage.removeItem('gym-tracker:timers').
+
+ADDENDUM — Keep screen on + rest notifications
+  - src/lib/wakeLock.ts: Screen Wake Lock held while any timer runs (setting
+    keepAwake, default on); re-acquired on visibilitychange; no-op if missing.
+  - src/lib/timerNotify.ts: opt-in notification (setting notifications,
+    default off) when rest ends while the page is hidden. Uses the service
+    worker registration (required on Android), falls back to new Notification.
+  - public/sw-notifications.js imported via workbox.importScripts; tap focuses
+    the app (never navigates, so unsaved drafts are safe).
+  - New settings default safely for state saved before this change.
+  Validation: npm test 96 passed (9 files) · build OK, dist/sw.js contains
+  importScripts("sw-notifications.js") · eslint src clean · format OK ·
+  Playwright 7/7 (wake lock requested while running and not when off;
+  permission flow; notification only when hidden).
+  Troubleshooting:
+  - Screen still dims: battery saver can refuse the lock (log:
+    wakelock.request_failed NotAllowedError).
+  - Notifications toggle disabled: permission denied in site settings, or
+    iPhone Safari without Home Screen install.
+==============================================================================

@@ -43,7 +43,9 @@ export function buildPayload(draft: WorkoutDraft): BuildPayloadResult {
       date: draft.date,
       startTime: combineDateTime(draft.date, draft.startTime),
       endTime: combineDateTime(draft.date, draft.endTime),
-      durationSeconds: durationSeconds(draft.date, draft.startTime, draft.endTime),
+      // Stopwatch time (pauses excluded) wins over end − start when present.
+      durationSeconds:
+        draft.activeDurationSeconds ?? durationSeconds(draft.date, draft.startTime, draft.endTime),
       notes: draft.notes.trim() || null,
       exercises,
     },

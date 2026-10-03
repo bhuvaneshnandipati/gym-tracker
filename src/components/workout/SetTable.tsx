@@ -1,5 +1,5 @@
 import { type CSSProperties } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Hourglass, Plus, X } from 'lucide-react';
 import { metricFields, type MetricKey } from '@/lib/exerciseMetrics';
 import {
   compareWeights,
@@ -12,6 +12,7 @@ import {
 } from '@/lib/exerciseProgress';
 import type { DraftExercise } from '@/hooks/useWorkoutDraft';
 import type { SetRow } from '@/types/workout';
+import { useTimerActions } from '@/hooks/useTimers';
 import { formatNumber } from '@/utils/number';
 import { cn } from '@/utils/cn';
 
@@ -39,16 +40,19 @@ export function SetTable({
   onRemoveSet,
   onSetField,
 }: SetTableProps) {
+  // Stable actions only, so typing in a set never re-renders on timer ticks.
+  const { startRestFromSet } = useTimerActions();
   const fields = metricFields(exercise.trackingType, exercise.name, exercise.weightUnit);
   const isStrength = exercise.trackingType === 'weight_reps';
   const totalVolume = isStrength ? draftExerciseVolume(exercise.sets) : 0;
 
   // Two grid templates: compact on phones, full table from `sm` upward.
+  // The last two columns hold the rest-timer and remove buttons.
   const gridStyle = {
-    '--set-cols': `1.75rem repeat(${fields.length}, minmax(0, 1fr)) 2.25rem`,
+    '--set-cols': `1.75rem repeat(${fields.length}, minmax(0, 1fr)) 2.25rem 2.25rem`,
     '--set-cols-sm': `2rem repeat(${fields.length}, minmax(0, 1fr)) 6rem ${
       isStrength ? '5.5rem ' : ''
-    }2.25rem`,
+    }2.25rem 2.25rem`,
   } as CSSProperties;
 
   const gridClass =
@@ -73,6 +77,7 @@ export function SetTable({
         ))}
         <span className="hidden sm:block">Previous</span>
         {isStrength ? <span className="hidden sm:block">Volume</span> : null}
+        <span />
         <span />
       </div>
 
@@ -120,6 +125,16 @@ export function SetTable({
                     {volume > 0 ? formatNumber(volume) : '—'}
                   </span>
                 ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => startRestFromSet(`set ${i + 1} of ${exercise.name}`)}
+                  aria-label={`Start rest timer after set ${i + 1} of ${exercise.name}`}
+                  title="Start rest timer"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-iron-400 transition-colors hover:bg-flame-50 hover:text-flame-600 active:scale-95 dark:hover:bg-flame-950/30 dark:hover:text-flame-400"
+                >
+                  <Hourglass className="h-4 w-4" aria-hidden="true" />
+                </button>
 
                 <button
                   type="button"

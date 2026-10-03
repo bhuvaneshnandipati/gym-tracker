@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { NAV_ITEMS } from '@/lib/navigation';
+import { MOBILE_NAV_ITEMS } from '@/lib/navigation';
 import { cn } from '@/utils/cn';
 
 /** Fixed bottom navigation, visible on small screens only. */
@@ -11,7 +11,7 @@ export function MobileNav() {
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <ul className="flex items-stretch justify-around">
-        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+        {MOBILE_NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
           <li key={to} className="flex-1">
             <NavLink
               to={to}

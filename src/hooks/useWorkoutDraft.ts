@@ -9,7 +9,7 @@ import {
   type TrackingType,
 } from '@/lib/exerciseMetrics';
 import type { SaveSetInput } from '@/api/workouts';
-import { todayISODate } from '@/utils/datetime';
+import { durationSeconds, todayISODate } from '@/utils/datetime';
 
 /** A set in the editor; values are strings (one per metric) for controlled inputs. */
 export interface DraftSet {
@@ -35,6 +35,11 @@ export interface WorkoutDraft {
   endTime: string;
   notes: string;
   exercises: DraftExercise[];
+  /**
+   * Active session time from the workout stopwatch (pauses excluded). When set,
+   * it is saved as the workout's duration instead of end − start.
+   */
+  activeDurationSeconds: number | null;
 }
 
 function uid(): string {
@@ -125,7 +130,14 @@ function resolveTrackingType(ex: {
 
 export function createEmptyDraft(defaultUnit: WeightUnit = 'lbs'): WorkoutDraft {
   void defaultUnit;
-  return { date: todayISODate(), startTime: '', endTime: '', notes: '', exercises: [] };
+  return {
+    date: todayISODate(),
+    startTime: '',
+    endTime: '',
+    notes: '',
+    exercises: [],
+    activeDurationSeconds: null,
+  };
 }
 
 function mapSavedExercise(
@@ -152,12 +164,22 @@ function mapSavedExercise(
 /** Build an editor draft from a saved workout (for editing). */
 export function draftFromWorkout(workout: WorkoutWithExercises): WorkoutDraft {
   const toTime = (iso: string | null) => (iso ? new Date(iso).toTimeString().slice(0, 5) : '');
+  const startTime = toTime(workout.start_time);
+  const endTime = toTime(workout.end_time);
+  // A stored duration that differs from end − start came from the stopwatch;
+  // keep it so re-saving the workout doesn't silently overwrite it.
+  const fromTimes = durationSeconds(workout.date, startTime, endTime);
+  const activeDurationSeconds =
+    workout.duration_seconds != null && workout.duration_seconds !== fromTimes
+      ? workout.duration_seconds
+      : null;
   return {
     date: workout.date,
-    startTime: toTime(workout.start_time),
-    endTime: toTime(workout.end_time),
+    startTime,
+    endTime,
     notes: workout.notes ?? '',
     exercises: workout.exercises.map((ex) => mapSavedExercise(ex)),
+    activeDurationSeconds,
   };
 }
 
@@ -172,6 +194,7 @@ export function draftFromTemplate(
     endTime: '',
     notes: '',
     exercises: workout.exercises.map((ex) => mapSavedExercise(ex, defaultUnit)),
+    activeDurationSeconds: null,
   };
 }
 
@@ -207,6 +230,10 @@ export function exerciseToDraft(
 type Action =
   | { type: 'reset'; draft: WorkoutDraft }
   | { type: 'setWorkoutField'; field: 'date' | 'startTime' | 'endTime' | 'notes'; value: string }
+  | {
+      type: 'patchSession';
+      patch: Partial<Pick<WorkoutDraft, 'startTime' | 'endTime' | 'activeDurationSeconds'>>;
+    }
   | { type: 'addExercise'; exercise: DraftExercise }
   | { type: 'removeExercise'; key: string }
   | { type: 'duplicateExercise'; key: string }
@@ -237,6 +264,9 @@ function reducer(draft: WorkoutDraft, action: Action): WorkoutDraft {
 
     case 'setWorkoutField':
       return { ...draft, [action.field]: action.value };
+
+    case 'patchSession':
+      return { ...draft, ...action.patch };
 
     case 'addExercise':
       return { ...draft, exercises: [...draft.exercises, action.exercise] };

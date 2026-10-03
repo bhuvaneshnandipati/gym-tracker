@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { CalendarDays, CheckCircle2, ClipboardCopy, Dumbbell, Plus } from 'lucide-react';
+import { CheckCircle2, ClipboardCopy, Dumbbell, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -13,11 +13,13 @@ import { FullPageSpinner } from '@/components/FullPageSpinner';
 import { ExerciseCard } from '@/components/workout/ExerciseCard';
 import { ExercisePicker } from '@/components/workout/ExercisePicker';
 import { SaveStatusIndicator } from '@/components/workout/SaveStatusIndicator';
+import { WorkoutSessionTimer } from '@/components/workout/WorkoutSessionTimer';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { useWorkout, useWorkouts, useSaveWorkout } from '@/hooks/useWorkouts';
 import { useExerciseHistory } from '@/hooks/useExerciseHistory';
 import { useAutoSave } from '@/hooks/useAutoSave';
+import { useTimerActions } from '@/hooks/useTimers';
 import {
   createEmptyDraft,
   draftFromWorkout,
@@ -27,13 +29,16 @@ import {
 } from '@/hooks/useWorkoutDraft';
 import { buildPayload, payloadSignature, type WorkoutPayload } from '@/lib/workoutPayload';
 import type { WeightUnit } from '@/lib/categories';
-import { durationSeconds, formatDuration } from '@/utils/datetime';
+import { sessionPatchFromStopwatch, stopwatchBelongsTo } from '@/lib/workoutTimer';
+import { timerLog } from '@/lib/timerLogger';
+import { durationSeconds } from '@/utils/datetime';
 
 export function WorkoutEditorPage() {
   const { id } = useParams<{ id: string }>();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
   const toast = useToast();
+  const timers = useTimerActions();
   const { profile } = useAuth();
   const defaultUnit: WeightUnit = profile?.weight_unit ?? 'lbs';
 
@@ -60,6 +65,9 @@ export function WorkoutEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [justAddedKey, setJustAddedKey] = useState<string | null>(null);
+  // Set when the stopwatch's time has just been written to the draft and the
+  // save should run on the next render (once the patched draft is current).
+  const [pendingTimedSave, setPendingTimedSave] = useState(false);
 
   const history = useExerciseHistory(workoutId);
   const lastWorkout = useMemo(
@@ -87,13 +95,18 @@ export function WorkoutEditorPage() {
     async (data: WorkoutPayload) => {
       const savedId = await saveWorkout.mutateAsync({ ...data, id: workoutIdRef.current });
       if (!workoutIdRef.current) {
+        // Tie a running workout stopwatch to the row that now exists, so it
+        // still applies if the user leaves and re-opens this workout.
+        if (stopwatchBelongsTo(timers.getState().stopwatch, undefined, startedNew.current)) {
+          timers.linkStopwatch(savedId);
+        }
         workoutIdRef.current = savedId;
         initialised.current = true; // the draft is the source of truth from here
         setWorkoutId(savedId);
         navigate(`/workout/${savedId}`, { replace: true });
       }
     },
-    [saveWorkout, navigate],
+    [saveWorkout, navigate, timers],
   );
 
   const autoSave = useAutoSave<WorkoutPayload>({
@@ -130,6 +143,26 @@ export function WorkoutEditorPage() {
     [history, defaultUnit, dispatch, toast],
   );
 
+  const runSave = useCallback(
+    async (fromStopwatch: boolean) => {
+      const outcome = await flushSave();
+      if (outcome === 'saved') {
+        if (fromStopwatch) {
+          timerLog.info('workout.saved_with_stopwatch', {
+            seconds: draft.activeDurationSeconds,
+          });
+          timers.resetStopwatch();
+        }
+        setSaved(true);
+      } else if (outcome === 'offline') {
+        setError("You're offline. This workout will sync automatically when you reconnect.");
+      } else {
+        setError('Could not save the workout. Please try again.');
+      }
+    },
+    [flushSave, timers, draft.activeDurationSeconds],
+  );
+
   const handleSave = async () => {
     setError(null);
     const result = buildPayload(draft);
@@ -137,15 +170,32 @@ export function WorkoutEditorPage() {
       setError(result.error);
       return;
     }
-    const outcome = await flushSave();
-    if (outcome === 'saved') {
-      setSaved(true);
-    } else if (outcome === 'offline') {
-      setError("You're offline. This workout will sync automatically when you reconnect.");
-    } else {
-      setError('Could not save the workout. Please try again.');
+    const sw = timers.getState().stopwatch;
+    if (stopwatchBelongsTo(sw, workoutIdRef.current, startedNew.current)) {
+      // Write the stopwatch's active time onto the draft, then save on the
+      // next render so auto-save persists the patched payload.
+      if (sw.status === 'running') timers.pauseStopwatch();
+      dispatch({ type: 'patchSession', patch: sessionPatchFromStopwatch(sw, draft, Date.now()) });
+      setPendingTimedSave(true);
+      return;
     }
+    await runSave(false);
   };
+
+  useEffect(() => {
+    if (!pendingTimedSave) return;
+    setPendingTimedSave(false);
+    void runSave(true);
+  }, [pendingTimedSave, runSave]);
+
+  const fillStartTime = useCallback(
+    (value: string) => dispatch({ type: 'setWorkoutField', field: 'startTime', value }),
+    [dispatch],
+  );
+  const clearActiveDuration = useCallback(
+    () => dispatch({ type: 'patchSession', patch: { activeDurationSeconds: null } }),
+    [dispatch],
+  );
 
   const startAnother = () => {
     initialised.current = true; // prevent edit-reset logic
@@ -254,13 +304,15 @@ export function WorkoutEditorPage() {
           />
         </div>
 
-        <div className="mt-4 flex items-center gap-2 text-sm text-iron-500 dark:text-iron-400">
-          <CalendarDays className="h-4 w-4" />
-          Duration:{' '}
-          <span className="font-medium text-iron-700 dark:text-iron-200">
-            {formatDuration(liveDuration)}
-          </span>
-        </div>
+        <WorkoutSessionTimer
+          workoutId={workoutId}
+          startedNew={startedNew.current}
+          startTime={draft.startTime}
+          durationFromTimes={liveDuration}
+          activeDurationSeconds={draft.activeDurationSeconds}
+          onFillStartTime={fillStartTime}
+          onClearActiveDuration={clearActiveDuration}
+        />
 
         <div className="mt-4">
           <Textarea

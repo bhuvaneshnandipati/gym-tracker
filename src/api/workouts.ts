@@ -1,4 +1,4 @@
-import { getSupabase } from '@/lib/supabase';
+import { getLocalState, markDeleted, markPending, newId, updateLocalState } from '@/lib/localStore';
 import type { Category, EquipmentType, WeightUnit } from '@/lib/categories';
 import type { TrackingType } from '@/lib/exerciseMetrics';
 import type {
@@ -40,61 +40,24 @@ export interface SaveWorkoutInput {
 }
 
 /**
- * Persist a workout and its nested exercises + sets.
+ * Save a workout and its exercises + sets on this device.
  *
- * Supabase has no client-side transactions, so on update we replace the
- * children (delete + re-insert via cascade). At personal scale this is simple
- * and correct; ownership is enforced by Row Level Security on every table.
+ * Works fully offline. The change is queued and only reaches the database when
+ * the user presses "Sync to cloud" (src/lib/cloudSync.ts).
  */
 export async function saveWorkout(input: SaveWorkoutInput): Promise<string> {
-  const supabase = getSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('You must be signed in to save a workout.');
+  const now = new Date().toISOString();
+  let savedId = '';
 
-  let workoutId = input.id;
+  updateLocalState((s) => {
+    const existing = input.id ? s.workouts[input.id] : undefined;
+    const workoutId = existing?.id ?? input.id ?? newId();
+    savedId = workoutId;
 
-  if (workoutId) {
-    const { error } = await supabase
-      .from('workouts')
-      .update({
-        date: input.date,
-        start_time: input.startTime,
-        end_time: input.endTime,
-        duration_seconds: input.durationSeconds,
-        notes: input.notes,
-      })
-      .eq('id', workoutId);
-    if (error) throw new Error(error.message);
-
-    const { error: deleteError } = await supabase
-      .from('workout_exercises')
-      .delete()
-      .eq('workout_id', workoutId);
-    if (deleteError) throw new Error(deleteError.message);
-  } else {
-    const { data, error } = await supabase
-      .from('workouts')
-      .insert({
-        user_id: user.id,
-        date: input.date,
-        start_time: input.startTime,
-        end_time: input.endTime,
-        duration_seconds: input.durationSeconds,
-        notes: input.notes,
-      })
-      .select('id')
-      .single();
-    if (error) throw new Error(error.message);
-    workoutId = data.id as string;
-  }
-
-  for (let i = 0; i < input.exercises.length; i += 1) {
-    const ex = input.exercises[i];
-    const { data: weRow, error: weError } = await supabase
-      .from('workout_exercises')
-      .insert({
+    const exercises: WorkoutExerciseWithSets[] = input.exercises.map((ex, i) => {
+      const weId = newId();
+      return {
+        id: weId,
         workout_id: workoutId,
         exercise_id: ex.exerciseId,
         name: ex.name,
@@ -104,92 +67,78 @@ export async function saveWorkout(input: SaveWorkoutInput): Promise<string> {
         tracking_type: ex.trackingType,
         notes: ex.notes,
         position: i,
-      })
-      .select('id')
-      .single();
-    if (weError) throw new Error(weError.message);
+        created_at: now,
+        sets: ex.sets.map(
+          (set, j): SetRow => ({
+            id: newId(),
+            workout_exercise_id: weId,
+            weight: set.weight,
+            reps: set.reps,
+            duration_seconds: set.durationSeconds,
+            distance: set.distance,
+            speed: set.speed,
+            incline: set.incline,
+            calories: set.calories,
+            completed: true,
+            position: j,
+            created_at: now,
+          }),
+        ),
+      };
+    });
 
-    if (ex.sets.length > 0) {
-      const setsPayload = ex.sets.map((s, j) => ({
-        workout_exercise_id: weRow.id,
-        weight: s.weight,
-        reps: s.reps,
-        duration_seconds: s.durationSeconds,
-        distance: s.distance,
-        speed: s.speed,
-        incline: s.incline,
-        calories: s.calories,
-        position: j,
-        completed: true,
-      }));
-      const { error: setsError } = await supabase.from('sets').insert(setsPayload);
-      if (setsError) throw new Error(setsError.message);
-    }
-  }
+    const workout: WorkoutWithExercises = {
+      id: workoutId,
+      user_id: s.userId,
+      date: input.date,
+      start_time: input.startTime,
+      end_time: input.endTime,
+      duration_seconds: input.durationSeconds,
+      notes: input.notes,
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+      exercises,
+    };
 
-  return workoutId;
+    return markPending(
+      { ...s, workouts: { ...s.workouts, [workoutId]: workout } },
+      'workouts',
+      workoutId,
+    );
+  });
+
+  return savedId;
 }
 
-type NestedWorkout = WorkoutRow & {
-  workout_exercises: (WorkoutExerciseWithSets & { sets: SetRow[] })[];
-};
-
-function shapeWorkout(row: NestedWorkout): WorkoutWithExercises {
-  const exercises = [...(row.workout_exercises ?? [])]
-    .sort((a, b) => a.position - b.position)
-    .map((we) => ({
-      ...we,
-      sets: [...(we.sets ?? [])].sort((a, b) => a.position - b.position),
-    }));
-
-  const { workout_exercises: _drop, ...workout } = row;
-  void _drop;
-  return { ...workout, exercises };
+/** Newest first: by date, then by creation time. */
+export function compareWorkouts(a: WorkoutRow, b: WorkoutRow): number {
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+  if (a.created_at !== b.created_at) return a.created_at < b.created_at ? 1 : -1;
+  return 0;
 }
-
-const NESTED_SELECT = '*, workout_exercises(*, sets(*))';
 
 export async function fetchWorkout(id: string): Promise<WorkoutWithExercises> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('workouts')
-    .select(NESTED_SELECT)
-    .eq('id', id)
-    .single();
-  if (error) throw new Error(error.message);
-  return shapeWorkout(data as NestedWorkout);
+  const workout = getLocalState().workouts[id];
+  if (!workout) throw new Error('Workout not found.');
+  return workout;
 }
 
 /** Most recent workout (by date, then created_at), or null. */
 export async function fetchLastWorkout(): Promise<WorkoutWithExercises | null> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('workouts')
-    .select(NESTED_SELECT)
-    .order('date', { ascending: false })
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data ? shapeWorkout(data as NestedWorkout) : null;
+  return (await fetchWorkouts())[0] ?? null;
 }
 
-/** All workouts for the user, newest first. Enriched further in Milestone 4. */
+/** All workouts for the user, newest first. */
 export async function fetchWorkouts(): Promise<WorkoutWithExercises[]> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('workouts')
-    .select(NESTED_SELECT)
-    .order('date', { ascending: false })
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(error.message);
-  return (data as NestedWorkout[]).map(shapeWorkout);
+  return Object.values(getLocalState().workouts).sort(compareWorkouts);
 }
 
 export async function deleteWorkout(id: string): Promise<void> {
-  const supabase = getSupabase();
-  const { error } = await supabase.from('workouts').delete().eq('id', id);
-  if (error) throw new Error(error.message);
+  updateLocalState((s) => {
+    const { [id]: _drop, ...rest } = s.workouts;
+    void _drop;
+    return markDeleted({ ...s, workouts: rest }, 'workouts', id);
+  });
 }
 
 /** Copy an existing workout to a new one dated today. Returns the new id. */

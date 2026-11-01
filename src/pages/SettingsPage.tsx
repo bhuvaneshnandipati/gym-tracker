@@ -1,18 +1,21 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Download, FileText, LogOut, Upload } from 'lucide-react';
+import { ClipboardCopy, Download, FileText, LogOut, Upload } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { SyncButton } from '@/components/sync/SyncButton';
+import { useLocalSyncInfo } from '@/hooks/useLocalData';
+import { formatSyncLog } from '@/lib/syncLogger';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { useWorkouts, useSaveWorkout } from '@/hooks/useWorkouts';
 import { env } from '@/lib/env';
 import { workoutsToCSV, downloadTextFile, parseWorkoutsCSV } from '@/utils/csv';
 import { exportWorkoutsPDF } from '@/utils/pdf';
-import { todayISODate } from '@/utils/datetime';
+import { formatRelativeTime, todayISODate } from '@/utils/datetime';
 
 export function SettingsPage() {
   const { user, profile, signOut } = useAuth();
@@ -25,12 +28,21 @@ export function SettingsPage() {
 
   const [pdfLoading, setPdfLoading] = useState(false);
   const [importing, setImporting] = useState(false);
+  const { pending, lastSyncedAt } = useLocalSyncInfo();
 
   const name = profile?.full_name ?? (user?.user_metadata?.full_name as string | undefined) ?? '—';
   const unit = profile?.weight_unit ?? 'lbs';
   const count = workouts?.length ?? 0;
 
   const handleSignOut = async () => {
+    if (
+      pending > 0 &&
+      !window.confirm(
+        `${pending} change${pending === 1 ? ' is' : 's are'} not synced yet. They stay on this device and come back when you sign in again here. Sign out anyway?`,
+      )
+    ) {
+      return;
+    }
     await signOut();
     navigate('/login', { replace: true });
   };
@@ -57,6 +69,15 @@ export function SettingsPage() {
       toast.error('Could not generate the PDF');
     } finally {
       setPdfLoading(false);
+    }
+  };
+
+  const handleCopyLog = async () => {
+    try {
+      await navigator.clipboard.writeText(formatSyncLog() || 'No sync activity yet.');
+      toast.success('Sync log copied');
+    } catch {
+      toast.error('Could not copy the log');
     }
   };
 
@@ -134,9 +155,40 @@ export function SettingsPage() {
               </div>
               <div className="flex justify-between">
                 <dt className="text-iron-500 dark:text-iron-400">Version</dt>
-                <dd className="font-medium text-iron-800 dark:text-iron-200">1.1.0</dd>
+                <dd className="font-medium text-iron-800 dark:text-iron-200">1.3.0</dd>
               </div>
             </dl>
+          </div>
+        </Card>
+
+        {/* Cloud sync */}
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle>Cloud sync</CardTitle>
+            <span className="text-sm text-iron-400">
+              Last synced {formatRelativeTime(lastSyncedAt)}
+            </span>
+          </CardHeader>
+          <p className="mb-4 text-sm text-iron-500 dark:text-iron-400">
+            The app works fully offline and saves everything on this device. Nothing is sent to the
+            cloud until you press <strong>Sync to cloud</strong>. Syncing uploads your changes (this
+            device&apos;s version wins), then downloads changes made on your other devices.
+          </p>
+          <dl className="mb-4 space-y-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <dt className="text-iron-500 dark:text-iron-400">Changes waiting to sync</dt>
+              <dd className="font-medium text-iron-800 dark:text-iron-200">{pending}</dd>
+            </div>
+          </dl>
+          <div className="flex flex-wrap gap-2">
+            <SyncButton
+              showLabel
+              className="h-10 bg-flame-600 px-4 text-white hover:bg-flame-700 dark:text-white dark:hover:bg-flame-700"
+            />
+            <Button variant="ghost" onClick={handleCopyLog}>
+              <ClipboardCopy className="h-4 w-4" />
+              Copy sync log
+            </Button>
           </div>
         </Card>
 

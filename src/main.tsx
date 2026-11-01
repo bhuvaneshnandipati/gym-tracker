@@ -1,8 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { App } from '@/App';
 import { ThemeProvider } from '@/contexts/ThemeProvider';
 import { AuthProvider } from '@/contexts/AuthProvider';
@@ -18,12 +17,13 @@ import '@/styles/index.css';
 // Apply the saved theme before the first paint to avoid a flash.
 initTheme();
 
-// Persist the query cache to localStorage so previously-loaded data is
-// available offline and across reloads.
-const persister = createSyncStoragePersister({
-  storage: window.localStorage,
-  key: 'gym-tracker:query-cache',
-});
+// App data now lives in the on-device store (src/lib/localStore.ts). Remove the
+// old persisted query cache, which is no longer used.
+try {
+  window.localStorage.removeItem('gym-tracker:query-cache');
+} catch {
+  // Ignore storage errors.
+}
 
 const container = document.getElementById('root');
 if (!container) {
@@ -36,10 +36,7 @@ createRoot(container).render(
       <ThemeProvider>
         <ToastProvider>
           {isSupabaseConfigured ? (
-            <PersistQueryClientProvider
-              client={queryClient}
-              persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}
-            >
+            <QueryClientProvider client={queryClient}>
               <AuthProvider>
                 <TimerProvider>
                   <BrowserRouter>
@@ -47,7 +44,7 @@ createRoot(container).render(
                   </BrowserRouter>
                 </TimerProvider>
               </AuthProvider>
-            </PersistQueryClientProvider>
+            </QueryClientProvider>
           ) : (
             <MissingSupabaseConfig />
           )}

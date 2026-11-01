@@ -1,38 +1,63 @@
-# Summary: Timer feature (branch `feature/timers`)
+# Summary: Offline-first with manual "Sync to cloud" (v1.3.0)
 
-**Task:** Add a Timer feature with rest timer, workout stopwatch and interval/HIIT timer to the gym-tracker app, following the existing stack: React 18 + TypeScript + Vite + Tailwind (flame/iron palette, class-based dark mode), React context for state, and Vitest.
+**Request:** make the gym tracker work completely offline, and only write to the database when the user presses "Sync to cloud". No automatic syncing.
 
 ## Decisions confirmed with the owner
-- **Navigation:** Timer is the 3rd item in the sidebar and the phone bottom bar. On phones Settings moves out of the bar; it's still in the avatar menu and the desktop sidebar.
-- **Stopwatch → workout:** active time (pauses excluded) is saved as the workout's duration. Empty start/end times are filled in.
-- **One-tap rest:** an hourglass button on each set row starts the last-used rest length (90s by default).
-- **Mini timer:** a floating pill shows the running timer on other screens.
+- **Sign-in:** still required. Sign in once online. A remembered sign-in then works offline.
+- **Sync:** two-way. Upload local changes, then download changes from other devices.
+- **Conflicts:** this device wins.
+- **Automatic activity:** all removed (realtime, reconnect refetch, profile loads on startup).
 
 ## What was delivered
-- `/timer` page with Rest / Stopwatch / Intervals tabs and sound and vibration toggles.
-- Timestamp-based engine, so timers stay accurate through sleep, background tabs and refreshes. State is persisted in `localStorage` and synced across tabs.
-- Web Audio cues: a distinct sound per phase plus 3-2-1 beeps, pre-scheduled on the audio clock so background throttling doesn't delay them. Vibration where supported.
-- Accessibility: `role="timer"` readouts, a live-region announcements area, aria labels, keyboard-navigable tabs and 56 px controls. Light and dark mode.
-- Workout editor integration: a rest button per set and a session timer row; save writes the stopwatch duration.
-- **Keep screen on** (Wake Lock, on by default) while any timer runs, and opt-in **rest notifications** when the app is in the background. Both are toggles in the Timer page's Alerts card.
-- Debug logger (`src/lib/timerLogger.ts`) and a new section in `BUILD_LOG.txt`.
-- Docs: `TIMER_FEATURE.md` (how it works, files changed, how to use it).
-- **No new dependencies. No database migration.**
+- **On-device store** (IndexedDB, falls back to localStorage), kept per user, with a queue of local edits and deletions. All screens read and write it, and nothing touches the network.
+- **Sync to cloud** button in the top bar with a pending-changes badge, plus a **Cloud sync** card in Settings (pending count, last synced, copy sync log).
+- **Sync engine:** maps exercise ids, uploads deletions, custom exercises, body metrics and workouts, then downloads and merges. Failed items stay queued for the next sync. Edits made during a sync are kept.
+- **Bundled exercise library**, so the picker works offline before the first sync.
+- **Offline sign-in:** the app opens offline even when the 1-hour access token has expired. The profile is cached, and sign-out works offline.
+- **First-run banner** on a device that has never synced. The offline banner now says data is saved on the device.
+- Removed realtime sync, the persisted query cache and two unused packages (`@tanstack/query-sync-storage-persister`, `@tanstack/react-query-persist-client`).
+- **Bug fix (existing):** the first auto-save in the editor sent you to the workout detail page partway through logging. It now stays in the editor (`/workout/:id/edit`).
+- Docs: `OFFLINE_SYNC.md`, README, `supabase/README.md`, `BUILD_LOG.txt`. Version is 1.3.0 in `package.json` and Settings.
+- **No database migration.**
 
 ## Verification
 | Check | Result |
 | --- | --- |
-| `npm test` | 96 passed (43 new across 3 files) |
+| `npm test` | 111 passed (15 new in `src/lib/cloudSync.test.ts`) |
 | `npm run build` (`tsc -b` + Vite + PWA) | Pass |
+| `npm run lint` | 0 problems |
 | `npm run format:check` | Pass |
-| `eslint src` | 0 problems |
-| `npm run lint` | 24 problems, all pre-existing and unchanged from `main` (see below) |
-| Playwright smoke test (mobile + desktop, light + dark, fake clock) | 19/19 checks pass, plus 7/7 for keep screen on and notifications |
+| Playwright on the production build, Supabase mocked | 12/12: opens with an expired token while Supabase is unreachable, logs a workout, saves on the device, survives a reload, **no database requests until Sync**, sync uploads with the real exercise id, badge and banner clear, no page errors |
 
-## Issues found in the repo (left unchanged on this branch)
-1. **Stray files in the repo root.** About 75 older copies of source files (e.g. `./App.tsx`, `./pdf.ts`, `./useWorkouts.ts`, `./csv.test.ts`) were uploaded next to `src/`. They differ from the `src/` versions, and they're why `npm run lint` fails on `main`. Deleting them, or adding them to ESLint's ignores, would make lint pass again.
-2. **`README.md` contains the source of `src/utils/datetime.ts`** instead of a README.
-3. **`npm run typecheck` checks no files.** The root `tsconfig.json` has `"files": []`. `tsc -b`, which `npm run build` runs, is the real type check. Changing the script to `tsc -b` would fix it.
+## Open items
+- Not tested against a live Supabase project. The REST calls match the existing schema and RLS: upserts by `id`, and body metrics upsert on `user_id,date`.
+- The sidebar footer still shows "v0.1.0". This was already the case and is unchanged.
 
-## Follow-up: repo cleanup
-All three issues are fixed on a separate branch, `chore/repo-cleanup` (based on `main`), so it can be reviewed on its own.
+---
+
+# Follow-up: timer notifications not always arriving (B + C)
+
+**Cause:** the "Rest finished" notification was triggered by the page's own timer, and only if the app was in the background at that exact moment. Phones pause background pages (locked screen or another app), so the timer never ran. When you came back, the app was on screen, so it skipped the notification.
+
+## What was delivered
+- **B. Backup timer in the service worker.** When a rest starts, is adjusted, paused or reset, the page sends the end time to the service worker, which shows the notification on time even if the page is paused or closed. It stays quiet when the app is on screen. A shared id prevents duplicates.
+- **C. Reliability fixes.**
+  - A **Send test notification (10s)** button in Timer, Alerts. Lock the phone and check it arrives.
+  - Permission is re-checked when you return to the app. If it was removed in phone settings, the card says so and the toggle shows off.
+  - If you come back after rest ended while the page was paused, a toast says "Rest finished 1m 20s ago".
+- **Bug fix in the offline change.** With a saved sign-in and no connection, the app took about 25 s to open, and never opened if the connection hung. It now opens from the saved sign-in in about 0.25 s, and Supabase checks the session in the background.
+
+## Verification
+| Check | Result |
+| --- | --- |
+| `npm test` | 115 passed (4 new in `src/lib/timerNotify.test.ts`) |
+| Build, lint, format | Pass |
+| Playwright with the real service worker (production build) | 10/10: notification arrives with the page closed, shown once, quiet while on screen, cancelled on pause, late-return toast, test button works with the page closed, revoked permission shown, no errors |
+| Playwright offline-sync suite (rerun) | 12/12 |
+| Startup with Supabase unreachable / hanging | 0.25 s / 0.27 s (was 25 s / never) |
+| Signed-out visitor | Redirected to login |
+
+## Limits
+- Browsers keep the service worker alive for a few minutes. Expect reliable alerts on Android Chrome for rests up to about 5 minutes.
+- On iPhone, alerts need the app on the Home Screen, and iOS stops the worker quickly, so this helps less there.
+- Battery saver, "Do not disturb", or force-closing the browser can still hold notifications back.

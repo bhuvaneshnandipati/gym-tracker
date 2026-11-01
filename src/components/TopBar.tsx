@@ -1,6 +1,7 @@
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Logo } from '@/components/Logo';
 import { UserMenu } from '@/components/UserMenu';
+import { SyncButton } from '@/components/sync/SyncButton';
 
 /** Sticky header bar shown on every app page. */
 export function TopBar() {
@@ -12,6 +13,8 @@ export function TopBar() {
       </div>
       <div className="hidden lg:block" />
       <div className="flex items-center gap-3">
+        <SyncButton showLabel className="hidden sm:inline-flex" />
+        <SyncButton className="sm:hidden" />
         <ThemeToggle />
         <UserMenu />
       </div>

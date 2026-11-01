@@ -1,4 +1,4 @@
-import { getSupabase } from '@/lib/supabase';
+import { getLocalState, markDeleted, markPending, newId, updateLocalState } from '@/lib/localStore';
 import type { BodyMetricRow } from '@/types/workout';
 
 export interface SaveBodyMetricInput {
@@ -13,51 +13,47 @@ export interface SaveBodyMetricInput {
   notes: string | null;
 }
 
-/** All body-metric entries for the user, newest first. */
+/** All body-metric entries for the user, newest first. Read from this device. */
 export async function fetchBodyMetrics(): Promise<BodyMetricRow[]> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('body_metrics')
-    .select('*')
-    .order('date', { ascending: false });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as BodyMetricRow[];
+  return Object.values(getLocalState().bodyMetrics).sort((a, b) =>
+    a.date < b.date ? 1 : a.date > b.date ? -1 : 0,
+  );
 }
 
-/** Insert or update the entry for a given date (one per day). */
+/**
+ * Insert or update the entry for a given date (one per day), on this device.
+ * Queued for the next "Sync to cloud".
+ */
 export async function saveBodyMetric(input: SaveBodyMetricInput): Promise<BodyMetricRow> {
-  const supabase = getSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('You must be signed in to save measurements.');
+  const now = new Date().toISOString();
+  const state = getLocalState();
+  const existing = Object.values(state.bodyMetrics).find((m) => m.date === input.date);
+  const row: BodyMetricRow = {
+    id: existing?.id ?? newId(),
+    user_id: state.userId,
+    date: input.date,
+    weight: input.weight,
+    body_fat: input.bodyFat,
+    chest: input.chest,
+    waist: input.waist,
+    arms: input.arms,
+    thighs: input.thighs,
+    calories: input.calories,
+    notes: input.notes,
+    created_at: existing?.created_at ?? now,
+    updated_at: now,
+  };
 
-  const { data, error } = await supabase
-    .from('body_metrics')
-    .upsert(
-      {
-        user_id: user.id,
-        date: input.date,
-        weight: input.weight,
-        body_fat: input.bodyFat,
-        chest: input.chest,
-        waist: input.waist,
-        arms: input.arms,
-        thighs: input.thighs,
-        calories: input.calories,
-        notes: input.notes,
-      },
-      { onConflict: 'user_id,date' },
-    )
-    .select('*')
-    .single();
-
-  if (error) throw new Error(error.message);
-  return data as BodyMetricRow;
+  updateLocalState((s) =>
+    markPending({ ...s, bodyMetrics: { ...s.bodyMetrics, [row.id]: row } }, 'bodyMetrics', row.id),
+  );
+  return row;
 }
 
 export async function deleteBodyMetric(id: string): Promise<void> {
-  const supabase = getSupabase();
-  const { error } = await supabase.from('body_metrics').delete().eq('id', id);
-  if (error) throw new Error(error.message);
+  updateLocalState((s) => {
+    const { [id]: _drop, ...rest } = s.bodyMetrics;
+    void _drop;
+    return markDeleted({ ...s, bodyMetrics: rest }, 'bodyMetrics', id);
+  });
 }

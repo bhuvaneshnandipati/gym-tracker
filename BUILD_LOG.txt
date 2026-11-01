@@ -942,3 +942,53 @@ ADDENDUM — Keep screen on + rest notifications
   - Notifications toggle disabled: permission denied in site settings, or
     iPhone Safari without Home Screen install.
 ==============================================================================
+
+==============================================================================
+v1.3.0 — Offline-first data + manual "Sync to cloud"
+==============================================================================
+  - All data reads/writes go to src/lib/localStore.ts (IndexedDB key
+    gym-tracker:local:<userId>; localStorage fallback). Queue: pending{} (edits,
+    by local revision) and deleted[] (tombstones).
+  - src/lib/cloudSync.ts runs only from the Sync button: remap exercise ids ->
+    push deletes, exercises, body metrics, workouts -> pull + merge (pending
+    local records win). Concurrent calls share one run.
+  - Removed: useRealtimeSync, persisted query cache, reconnect resume/refetch.
+    Query client uses networkMode 'always'.
+  - Auth: falls back to the stored session when offline with an expired
+    token; profile cached at gym-tracker:profile:<userId>; offline sign-out
+    clears the stored session locally.
+  - Fix: editor first auto-save now replaces URL with /workout/:id/edit (was
+    the detail page, which left the editor).
+  Validation: npm test 111 passed (10 files) · build OK · lint 0 · format OK ·
+  Playwright 12/12 (mocked Supabase; zero REST calls before Sync).
+  Troubleshooting:
+  - Settings -> Copy sync log; console output in production with
+    localStorage.setItem('gym-tracker:debug', 'sync').
+  - Sync log events: store.loaded, sync.start, sync.exercise_ids_remapped,
+    sync.push_failed {collection,id,message}, sync.done {stillPending}.
+  - "Sign-in has expired": refresh token rejected; sign out/in online, data kept.
+==============================================================================
+
+ADDENDUM (v1.3.0) — Reliable rest notifications + instant offline start
+  - public/sw-notifications.js: backup rest timer. Messages rest:schedule
+    {id, at} / rest:cancel. Held via event.waitUntil; shows only when no
+    window is visible; skips if a notification with the same restId exists.
+  - TimerProvider: posts schedule/cancel on rest status/endsAt/settings change;
+    on finish while hidden, page fallback after 1.5 s (deduped by id
+    rest-<endsAt>); on finish while visible, cancels worker; late (>5 s)
+    return shows toast "Rest finished Xs ago".
+  - TimerAlertsCard: permission watcher (visibility/focus/permissions.onchange),
+    "Permission was removed" state, Send test notification (10 s via worker).
+  - AuthProvider: initial session read synchronously from storage; loading
+    only when none saved. Fixes 25 s offline start / hang on stalled network.
+  Validation: npm test 115 passed · build/lint/format OK · Playwright (real
+  SW, new-headless Chromium) 10/10 notifications + 12/12 offline sync ·
+  startup 0.25 s with Supabase unreachable.
+  Note: old headless Chromium denies all notifications even when granted;
+  test with channel 'chromium' (new headless) or headed.
+  Troubleshooting:
+  - Timer log (window.__gymTrackerTimerLog() with debug on):
+    notify.worker_scheduled {ok:false} = no active service worker (dev build
+    or not installed yet). notify.rest_done_skipped = worker already showed it.
+  - DevTools -> Application -> Service workers: confirm sw.js active.
+==============================================================================

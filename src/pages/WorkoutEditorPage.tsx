@@ -43,7 +43,7 @@ export function WorkoutEditorPage() {
   const defaultUnit: WeightUnit = profile?.weight_unit ?? 'lbs';
 
   // Sessions that begin as "new" keep that framing even after auto-save has
-  // created the row and swapped the URL to /workout/:id.
+  // created the row and swapped the URL to /workout/:id/edit.
   const startedNew = useRef(!id);
 
   const [hydrated, setHydrated] = useState(!isEdit);
@@ -103,7 +103,7 @@ export function WorkoutEditorPage() {
         workoutIdRef.current = savedId;
         initialised.current = true; // the draft is the source of truth from here
         setWorkoutId(savedId);
-        navigate(`/workout/${savedId}`, { replace: true });
+        navigate(`/workout/${savedId}/edit`, { replace: true });
       }
     },
     [saveWorkout, navigate, timers],
@@ -154,8 +154,6 @@ export function WorkoutEditorPage() {
           timers.resetStopwatch();
         }
         setSaved(true);
-      } else if (outcome === 'offline') {
-        setError("You're offline. This workout will sync automatically when you reconnect.");
       } else {
         setError('Could not save the workout. Please try again.');
       }

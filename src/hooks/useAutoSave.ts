@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 
 /** Lifecycle of the auto-save indicator. */
-export type SaveStatus = 'idle' | 'saving' | 'saved' | 'offline' | 'error';
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 /** Status reported once a flush has settled (never 'saving'). */
 export type SettledStatus = Exclude<SaveStatus, 'saving'>;
@@ -37,8 +36,8 @@ export interface AutoSaveController {
  *   into a single follow-up write.
  * - Skips the write entirely when the fingerprint matches what was last
  *   persisted, so no duplicate database writes are issued.
- * - Holds changes while offline and flushes them on reconnect, leaving the
- *   app's existing offline/query-persistence behaviour untouched.
+ * - Saves go to the on-device store, so they work the same online or
+ *   offline; reaching the database is left to "Sync to cloud".
  * - Flushes on tab hide / pagehide, and warns on unload while still dirty.
  */
 export function useAutoSave<T>({
@@ -48,8 +47,6 @@ export function useAutoSave<T>({
   delay = 800,
   enabled = true,
 }: UseAutoSaveOptions<T>): AutoSaveController {
-  const online = useOnlineStatus();
-
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [dirty, setDirty] = useState(false);
 
@@ -57,7 +54,6 @@ export function useAutoSave<T>({
   const signatureRef = useRef<string | null>(signature);
   const savedSignatureRef = useRef<string | null>(null);
   const saveRef = useRef(save);
-  const onlineRef = useRef(online);
   const enabledRef = useRef(enabled);
   const runningRef = useRef<Promise<SettledStatus> | null>(null);
   const queuedRef = useRef(false);
@@ -66,7 +62,6 @@ export function useAutoSave<T>({
   dataRef.current = data;
   signatureRef.current = signature;
   saveRef.current = save;
-  onlineRef.current = online;
   enabledRef.current = enabled;
 
   const isDirty = useCallback(
@@ -85,12 +80,6 @@ export function useAutoSave<T>({
     clearTimer();
 
     if (!enabledRef.current) return 'idle';
-
-    // Never queue behind a mutation that offline mode may have paused.
-    if (!onlineRef.current) {
-      if (isDirty()) setStatus('offline');
-      return 'offline';
-    }
 
     // Coalesce: wait for any in-flight write, then persist the newest value.
     while (runningRef.current) {
@@ -116,9 +105,8 @@ export function useAutoSave<T>({
         setStatus('saved');
         return 'saved';
       } catch {
-        const outcome: SettledStatus = onlineRef.current ? 'error' : 'offline';
-        setStatus(outcome);
-        return outcome;
+        setStatus('error');
+        return 'error';
       } finally {
         runningRef.current = null;
       }
@@ -139,7 +127,7 @@ export function useAutoSave<T>({
     return outcome;
   }, [clearTimer, isDirty]);
 
-  // Schedule a save whenever the value changes (or we come back online).
+  // Schedule a save whenever the value changes.
   useEffect(() => {
     if (!enabled) return;
     if (signature == null) {
@@ -153,14 +141,9 @@ export function useAutoSave<T>({
 
     setDirty(true);
 
-    if (!online) {
-      setStatus('offline');
-      return;
-    }
-
     timerRef.current = window.setTimeout(() => void flush(), delay);
     return clearTimer;
-  }, [signature, online, enabled, delay, flush, clearTimer]);
+  }, [signature, enabled, delay, flush, clearTimer]);
 
   // Best-effort flush when the tab is hidden or the page is going away.
   useEffect(() => {

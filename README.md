@@ -6,15 +6,15 @@ A mobile-first progressive web app built with **React 18, TypeScript, Vite, Tail
 
 ## Features
 
-- **Workout logging.** Add exercises from a built-in library or your own. Each exercise records the right fields for its type: weight × reps, reps only, timed holds, or cardio (duration, distance, speed, incline, calories). Sets auto-save as you type and work offline.
+- **Workout logging.** Add exercises from a built-in library or your own. Each exercise records the right fields for its type: weight × reps, reps only, timed holds, or cardio (duration, distance, speed, incline, calories). Sets auto-save to the device as you type.
 - **Exercise intelligence.** Your previous session pre-fills new sets. Each set shows a trend badge (progress, maintaining or deload). There are live volume totals and per-exercise coaching notes.
 - **Dashboard and history.** Streaks, weekly stats and recent sessions. Search and filter past workouts, then open, edit or delete them.
 - **Progress analytics.** Charts per exercise (weight, volume, estimated 1RM, duration, distance), a personal-record timeline and training frequency.
 - **Body metrics.** Track weight, body fat, measurements and calories over time.
 - **Import and export.** CSV export and import, and a PDF report.
 - **Accounts.** Email/password and Google sign-in, password reset and "remember me". Row Level Security keeps every user's data private.
-- **Realtime sync** across devices.
-- **Offline-ready PWA.** Installable, caches the app shell and your loaded data.
+- **Offline-first.** Everything is stored on the device (IndexedDB) and works with no connection. Nothing is sent to the database until you press **Sync to cloud**, which uploads your changes (this device wins) and downloads changes from your other devices. See [OFFLINE_SYNC.md](OFFLINE_SYNC.md).
+- **Installable PWA.** Caches the app shell so it opens offline.
 - **Light, dark and system themes,** keyboard and screen-reader friendly.
 
 ## Quick start
@@ -76,7 +76,7 @@ The `@/` import alias points to `src/`.
 | Area | Choice |
 | --- | --- |
 | UI | React 18, React Router 6, Tailwind CSS 3, lucide-react icons |
-| Data | Supabase (Postgres, Auth, Realtime), TanStack Query with persisted cache |
+| Data | On-device store (IndexedDB) with manual Sync to Supabase (Postgres, Auth); TanStack Query over the local store |
 | Forms | react-hook-form + zod |
 | Charts / export | Recharts, jsPDF, Papa Parse |
 | Tooling | Vite 5, TypeScript (strict), ESLint 9, Prettier 3, Vitest 2, vite-plugin-pwa |

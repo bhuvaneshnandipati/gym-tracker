@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
-import { getSupabase, setRemember } from '@/lib/supabase';
+import { clearStoredSession, getSupabase, readStoredSession, setRemember } from '@/lib/supabase';
 import type { Profile } from '@/types/auth';
 import { AuthContext, type AuthContextValue } from '@/contexts/auth-context';
 
@@ -12,11 +12,43 @@ function toMessage(error: unknown, fallback = 'Something went wrong. Please try 
   return fallback;
 }
 
+const profileKey = (userId: string) => `gym-tracker:profile:${userId}`;
+
+function readCachedProfile(userId: string): Profile | null {
+  try {
+    const raw = window.localStorage.getItem(profileKey(userId));
+    return raw ? (JSON.parse(raw) as Profile) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedProfile(userId: string, profile: Profile | null): void {
+  try {
+    if (profile) window.localStorage.setItem(profileKey(userId), JSON.stringify(profile));
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+/**
+ * Auth works offline once signed in: the saved session is used even when its
+ * access token can't be refreshed without a connection, and the profile comes
+ * from a cache on this device. The profile is fetched from the database only
+ * right after signing in and when the user presses "Sync to cloud".
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = getSupabase();
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Start from the session saved on this device, so the app opens instantly
+  // even offline or on a connection that hangs. Supabase confirms or refreshes
+  // it in the background (that can take ~30 s of retries without a network).
+  const [session, setSession] = useState<Session | null>(() => readStoredSession());
+  const [profile, setProfile] = useState<Profile | null>(() => {
+    const stored = readStoredSession();
+    return stored ? readCachedProfile(stored.user.id) : null;
+  });
+  // Only wait for Supabase when nothing is saved (first sign-in, OAuth return).
+  const [loading, setLoading] = useState(() => readStoredSession() == null);
 
   // Avoid setting state after unmount.
   const mounted = useRef(true);
@@ -30,12 +62,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (error) {
-        // Most likely the migration hasn't been applied yet — degrade gracefully.
+        // Offline, or the migration hasn't been applied — keep the cached copy.
         console.warn('Could not load profile:', error.message);
-        if (mounted.current) setProfile(null);
         return;
       }
-      if (mounted.current) setProfile((data as Profile) ?? null);
+      const next = (data as Profile) ?? null;
+      writeCachedProfile(userId, next);
+      if (mounted.current) setProfile(next);
     },
     [supabase],
   );
@@ -43,24 +76,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     mounted.current = true;
 
-    // Resolve the initial session.
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted.current) return;
-      setSession(data.session);
-      if (data.session?.user) void loadProfile(data.session.user.id);
-      setLoading(false);
-    });
+    const adopt = (next: Session) => {
+      setSession(next);
+      setProfile(readCachedProfile(next.user.id));
+    };
+
+    // Confirm the initial session in the background. Offline with an expired
+    // token, Supabase reports none; keep the session saved on this device.
+    // A revoked sign-in arrives as SIGNED_OUT below.
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!mounted.current) return;
+        const initial = data.session ?? readStoredSession();
+        if (initial) adopt(initial);
+      })
+      .catch(() => {
+        const stored = readStoredSession();
+        if (mounted.current && stored) adopt(stored);
+      })
+      .finally(() => {
+        if (mounted.current) setLoading(false);
+      });
 
     // React to future auth changes (sign in/out, token refresh, recovery).
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted.current) return;
-      setSession(nextSession);
-      if (nextSession?.user) {
-        void loadProfile(nextSession.user.id);
-      } else {
+      if (event === 'SIGNED_OUT') {
+        setSession(null);
         setProfile(null);
+        return;
+      }
+      // A null session for any other reason (e.g. offline refresh failure) is
+      // not a sign-out; keep using the saved one.
+      if (!nextSession) return;
+      adopt(nextSession);
+      if (event === 'SIGNED_IN' && !readCachedProfile(nextSession.user.id)) {
+        // Signing in needs a connection anyway; fetch the profile once.
+        void loadProfile(nextSession.user.id);
       }
     });
 
@@ -69,6 +124,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, [supabase, loadProfile]);
+
+  const refreshProfile = useCallback(async () => {
+    const id = session?.user.id;
+    if (id) await loadProfile(id);
+  }, [session, loadProfile]);
 
   const signInWithPassword = useCallback(
     async (email: string, password: string, remember: boolean) => {
@@ -107,7 +167,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    // Unsynced data stays on this device (keyed by user) for the next sign-in.
+    const { error } = await supabase.auth.signOut().catch((e: unknown) => ({ error: e }));
+    if (error) {
+      // Offline: the server call failed, so clear the saved session locally.
+      clearStoredSession();
+    }
     if (mounted.current) {
       setSession(null);
       setProfile(null);
@@ -146,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       sendPasswordReset,
       updatePassword,
+      refreshProfile,
     }),
     [
       session,
@@ -158,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       sendPasswordReset,
       updatePassword,
+      refreshProfile,
     ],
   );
 

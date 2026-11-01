@@ -1,18 +1,11 @@
-import { getSupabase } from '@/lib/supabase';
+import { getLocalState, markDeleted, markPending, newId, updateLocalState } from '@/lib/localStore';
 import type { Category, EquipmentType } from '@/lib/categories';
 import type { TrackingType } from '@/lib/exerciseMetrics';
 import type { ExerciseRow } from '@/types/workout';
 
-/** Built-in exercises (RLS-visible to all) plus the current user's custom ones. */
+/** Built-in exercises plus the user's custom ones, read from this device. */
 export async function fetchExercises(): Promise<ExerciseRow[]> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('exercises')
-    .select('*')
-    .order('name', { ascending: true });
-
-  if (error) throw new Error(error.message);
-  return (data ?? []) as ExerciseRow[];
+  return Object.values(getLocalState().exercises).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export interface CreateExerciseInput {
@@ -22,35 +15,36 @@ export interface CreateExerciseInput {
   trackingType: TrackingType;
 }
 
+/** Create a custom exercise on this device. Queued for the next sync. */
 export async function createCustomExercise(input: CreateExerciseInput): Promise<ExerciseRow> {
-  const supabase = getSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('You must be signed in to add an exercise.');
+  const name = input.name.trim();
+  const state = getLocalState();
+  const duplicate = Object.values(state.exercises).some(
+    (e) => e.user_id != null && e.name.toLowerCase() === name.toLowerCase(),
+  );
+  if (duplicate) throw new Error('You already have an exercise with that name.');
 
-  const { data, error } = await supabase
-    .from('exercises')
-    .insert({
-      user_id: user.id,
-      name: input.name.trim(),
-      category: input.category,
-      equipment_type: input.equipmentType,
-      tracking_type: input.trackingType,
-      is_custom: true,
-    })
-    .select('*')
-    .single();
+  const row: ExerciseRow = {
+    id: newId(),
+    user_id: state.userId,
+    name,
+    category: input.category,
+    equipment_type: input.equipmentType,
+    tracking_type: input.trackingType,
+    is_custom: true,
+    created_at: new Date().toISOString(),
+  };
 
-  if (error) {
-    if (error.code === '23505') throw new Error('You already have an exercise with that name.');
-    throw new Error(error.message);
-  }
-  return data as ExerciseRow;
+  updateLocalState((s) =>
+    markPending({ ...s, exercises: { ...s.exercises, [row.id]: row } }, 'exercises', row.id),
+  );
+  return row;
 }
 
 export async function deleteCustomExercise(id: string): Promise<void> {
-  const supabase = getSupabase();
-  const { error } = await supabase.from('exercises').delete().eq('id', id);
-  if (error) throw new Error(error.message);
+  updateLocalState((s) => {
+    const { [id]: _drop, ...rest } = s.exercises;
+    void _drop;
+    return markDeleted({ ...s, exercises: rest }, 'exercises', id);
+  });
 }

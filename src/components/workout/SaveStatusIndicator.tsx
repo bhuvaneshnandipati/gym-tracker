@@ -1,4 +1,4 @@
-import { AlertCircle, Check, CloudOff, Loader2 } from 'lucide-react';
+import { AlertCircle, Check, Loader2 } from 'lucide-react';
 import type { SaveStatus } from '@/hooks/useAutoSave';
 import { cn } from '@/utils/cn';
 
@@ -12,11 +12,10 @@ interface SaveStatusIndicatorProps {
 const STYLES: Record<Exclude<SaveStatus, 'idle'>, string> = {
   saving: 'text-iron-500 dark:text-iron-400',
   saved: 'text-green-600 dark:text-green-400',
-  offline: 'text-amber-600 dark:text-amber-400',
   error: 'text-red-600 dark:text-red-400',
 };
 
-/** Compact auto-save state: Saving… / Saved ✓ / Offline / Save failed. */
+/** Compact auto-save state: Saving… / Saved on device ✓ / Save failed. */
 export function SaveStatusIndicator({ status, onRetry, className }: SaveStatusIndicatorProps) {
   if (status === 'idle') return null;
 
@@ -35,16 +34,7 @@ export function SaveStatusIndicator({ status, onRetry, className }: SaveStatusIn
     return (
       <span className={classes} role="status" aria-live="polite">
         <Check className="h-3.5 w-3.5" />
-        Saved
-      </span>
-    );
-  }
-
-  if (status === 'offline') {
-    return (
-      <span className={classes} role="status" aria-live="polite">
-        <CloudOff className="h-3.5 w-3.5" />
-        Offline (will sync)
+        Saved on device
       </span>
     );
   }

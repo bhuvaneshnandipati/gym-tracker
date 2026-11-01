@@ -5,13 +5,10 @@ import { MobileNav } from '@/components/MobileNav';
 import { FloatingActionButton } from '@/components/FloatingActionButton';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { MiniTimerPill } from '@/components/timer/MiniTimerPill';
-import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 
 /** The shell wrapping every authenticated app route. */
 export function AppLayout() {
-  // Keep queries fresh when changes arrive from other devices.
-  useRealtimeSync();
-
+  // No background syncing: data stays on this device until "Sync to cloud".
   return (
     <div className="flex h-full">
       <a

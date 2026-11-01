@@ -942,3 +942,29 @@ ADDENDUM — Keep screen on + rest notifications
   - Notifications toggle disabled: permission denied in site settings, or
     iPhone Safari without Home Screen install.
 ==============================================================================
+
+==============================================================================
+v1.3.0 — Offline-first data + manual "Sync to cloud"
+==============================================================================
+  - All data reads/writes go to src/lib/localStore.ts (IndexedDB key
+    gym-tracker:local:<userId>; localStorage fallback). Queue: pending{} (edits,
+    by local revision) and deleted[] (tombstones).
+  - src/lib/cloudSync.ts runs only from the Sync button: remap exercise ids ->
+    push deletes, exercises, body metrics, workouts -> pull + merge (pending
+    local records win). Concurrent calls share one run.
+  - Removed: useRealtimeSync, persisted query cache, reconnect resume/refetch.
+    Query client uses networkMode 'always'.
+  - Auth: falls back to the stored session when offline with an expired
+    token; profile cached at gym-tracker:profile:<userId>; offline sign-out
+    clears the stored session locally.
+  - Fix: editor first auto-save now replaces URL with /workout/:id/edit (was
+    the detail page, which left the editor).
+  Validation: npm test 111 passed (10 files) · build OK · lint 0 · format OK ·
+  Playwright 12/12 (mocked Supabase; zero REST calls before Sync).
+  Troubleshooting:
+  - Settings -> Copy sync log; console output in production with
+    localStorage.setItem('gym-tracker:debug', 'sync').
+  - Sync log events: store.loaded, sync.start, sync.exercise_ids_remapped,
+    sync.push_failed {collection,id,message}, sync.done {stillPending}.
+  - "Sign-in has expired": refresh token rejected; sign out/in online, data kept.
+==============================================================================

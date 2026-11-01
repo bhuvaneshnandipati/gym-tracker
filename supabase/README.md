@@ -43,10 +43,10 @@ Under **Authentication → Providers / URL configuration**:
 
 ## Realtime
 
-Migration `0004` adds `workouts` and `body_metrics` to the `supabase_realtime`
-publication so changes sync across devices. Realtime is on by default for
-new Supabase projects; if you disabled it, re-enable Realtime in the
-dashboard under **Database → Replication**.
+The app no longer uses Realtime: data stays on the device until you press
+**Sync to cloud** (see `OFFLINE_SYNC.md`). Migration `0004` still adds
+`workouts` and `body_metrics` to the `supabase_realtime` publication; that is
+harmless and needs no change.
 
 ## How "Remember me" works
 

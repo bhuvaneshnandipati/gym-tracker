@@ -11,7 +11,7 @@ export interface AuthContextValue {
   session: Session | null;
   /** Convenience accessor for the signed-in user. */
   user: User | null;
-  /** The user's profile row, loaded after authentication. */
+  /** The user's profile row, cached on this device. */
   profile: Profile | null;
   /** True until the initial session check completes. */
   loading: boolean;
@@ -26,6 +26,8 @@ export interface AuthContextValue {
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<AuthResult>;
   updatePassword: (password: string) => Promise<AuthResult>;
+  /** Re-read the profile from the database (used by Sync to cloud). */
+  refreshProfile: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);

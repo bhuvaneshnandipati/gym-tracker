@@ -41,7 +41,16 @@ import {
 } from '@/lib/timerSound';
 import { timerLog } from '@/lib/timerLogger';
 import { createWakeLockController } from '@/lib/wakeLock';
-import { clearRestNotification, showRestDoneNotification } from '@/lib/timerNotify';
+import {
+  cancelScheduledRestNotification,
+  clearRestNotification,
+  notificationPermission,
+  restScheduleCommand,
+  restNotificationId,
+  scheduleRestNotification,
+  showRestDoneNotification,
+} from '@/lib/timerNotify';
+import { useToast } from '@/hooks/useToast';
 
 /** How often the display refreshes while something is running. */
 const TICK_MS = 250;
@@ -49,6 +58,19 @@ const TICK_MS = 250;
 const RESCHEDULE_MS = 60_000;
 /** Transitions noticed later than this (tab throttled / phone asleep) skip vibration. */
 const STALE_MS = 5_000;
+/**
+ * When the page notices a rest ended while it was hidden, wait this long before
+ * showing its own notification, so the service worker's (sent on time) wins.
+ */
+const PAGE_FALLBACK_DELAY_MS = 1_500;
+
+function formatAgo(ms: number): string {
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  const rest = sec % 60;
+  return rest ? `${min}m ${rest}s` : `${min}m`;
+}
 
 function loadState(): TimerState {
   try {
@@ -70,6 +92,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(timerReducer, undefined, loadState);
   const [now, setNow] = useState(() => Date.now());
   const [announcement, setAnnouncement] = useState('');
+  const toast = useToast();
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -162,6 +185,17 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
+  // Backup notification: hand the rest's end time to the service worker, which
+  // keeps running when the phone pauses this page (locked or another app).
+  useEffect(() => {
+    const { rest, settings } = stateRef.current;
+    // A finished rest is handled by the transition effect below.
+    if (rest.status === 'finished') return;
+    const command = restScheduleCommand(rest, settings.notifications, notificationPermission());
+    if (command.type === 'schedule') void scheduleRestNotification(command.id, command.at);
+    else void cancelScheduledRestNotification();
+  }, [state.rest.status, state.rest.endsAt, state.settings.notifications]);
+
   // ------------------------------------------------------------------ audio
   // Browsers need a gesture before audio can play; after a reload, the first
   // tap anywhere re-enables scheduled cues.
@@ -227,9 +261,20 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       timerLog.info('rest.finished', { lateMs: late });
       if (late < STALE_MS) vibrate('restDone', state.settings.vibration);
       announce('Rest finished. Time for your next set.');
-      // Only worth a system notification when the app isn't in front.
-      if (state.settings.notifications && document.visibilityState === 'hidden') {
-        void showRestDoneNotification();
+      const id = restNotificationId(state.rest.finishedAt ?? Date.now());
+      if (document.visibilityState === 'hidden') {
+        // The worker should have shown it already; show ours only if it didn't.
+        if (state.settings.notifications) {
+          window.setTimeout(() => void showRestDoneNotification(id), PAGE_FALLBACK_DELAY_MS);
+        }
+      } else {
+        // On screen: the page alerts, so the worker must not.
+        void cancelScheduledRestNotification();
+        if (late >= STALE_MS) {
+          // The page was paused (phone locked / another app) and missed the
+          // moment. Say so, rather than finishing silently.
+          toast.info(`Rest finished ${formatAgo(late)} ago. Time for your next set.`);
+        }
       }
     }
   }, [
@@ -238,6 +283,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     state.settings.vibration,
     state.settings.notifications,
     announce,
+    toast,
   ]);
 
   const prevSegment = useRef(`${snapshot.status}:${snapshot.segmentIndex}`);

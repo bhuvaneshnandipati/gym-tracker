@@ -4,7 +4,7 @@ The app works fully offline. All data is stored on the device, and **nothing is 
 
 ## How to use it
 
-1. Sign in once while you have internet. With "Remember me" on (the default), you stay signed in, even offline.
+1. Sign in once while you have internet. With "Remember me" on (the default), you stay signed in, even offline. The app opens straight from the saved sign-in, without waiting for the network.
 2. Log workouts, body metrics and custom exercises as normal. Everything saves on the device instantly. The editor shows **Saved on device**.
 3. When you want to back up or share data with another device, press **Sync to cloud**:
    - in the top bar (the number badge shows how many changes are waiting), or

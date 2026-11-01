@@ -32,3 +32,32 @@
 ## Open items
 - Not tested against a live Supabase project. The REST calls match the existing schema and RLS: upserts by `id`, and body metrics upsert on `user_id,date`.
 - The sidebar footer still shows "v0.1.0". This was already the case and is unchanged.
+
+---
+
+# Follow-up: timer notifications not always arriving (B + C)
+
+**Cause:** the "Rest finished" notification was triggered by the page's own timer, and only if the app was in the background at that exact moment. Phones pause background pages (locked screen or another app), so the timer never ran. When you came back, the app was on screen, so it skipped the notification.
+
+## What was delivered
+- **B. Backup timer in the service worker.** When a rest starts, is adjusted, paused or reset, the page sends the end time to the service worker, which shows the notification on time even if the page is paused or closed. It stays quiet when the app is on screen. A shared id prevents duplicates.
+- **C. Reliability fixes.**
+  - A **Send test notification (10s)** button in Timer, Alerts. Lock the phone and check it arrives.
+  - Permission is re-checked when you return to the app. If it was removed in phone settings, the card says so and the toggle shows off.
+  - If you come back after rest ended while the page was paused, a toast says "Rest finished 1m 20s ago".
+- **Bug fix in the offline change.** With a saved sign-in and no connection, the app took about 25 s to open, and never opened if the connection hung. It now opens from the saved sign-in in about 0.25 s, and Supabase checks the session in the background.
+
+## Verification
+| Check | Result |
+| --- | --- |
+| `npm test` | 115 passed (4 new in `src/lib/timerNotify.test.ts`) |
+| Build, lint, format | Pass |
+| Playwright with the real service worker (production build) | 10/10: notification arrives with the page closed, shown once, quiet while on screen, cancelled on pause, late-return toast, test button works with the page closed, revoked permission shown, no errors |
+| Playwright offline-sync suite (rerun) | 12/12 |
+| Startup with Supabase unreachable / hanging | 0.25 s / 0.27 s (was 25 s / never) |
+| Signed-out visitor | Redirected to login |
+
+## Limits
+- Browsers keep the service worker alive for a few minutes. Expect reliable alerts on Android Chrome for rests up to about 5 minutes.
+- On iPhone, alerts need the app on the Home Screen, and iOS stops the worker quickly, so this helps less there.
+- Battery saver, "Do not disturb", or force-closing the browser can still hold notifications back.

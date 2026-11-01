@@ -39,9 +39,16 @@ function writeCachedProfile(userId: string, profile: Profile | null): void {
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = getSupabase();
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Start from the session saved on this device, so the app opens instantly
+  // even offline or on a connection that hangs. Supabase confirms or refreshes
+  // it in the background (that can take ~30 s of retries without a network).
+  const [session, setSession] = useState<Session | null>(() => readStoredSession());
+  const [profile, setProfile] = useState<Profile | null>(() => {
+    const stored = readStoredSession();
+    return stored ? readCachedProfile(stored.user.id) : null;
+  });
+  // Only wait for Supabase when nothing is saved (first sign-in, OAuth return).
+  const [loading, setLoading] = useState(() => readStoredSession() == null);
 
   // Avoid setting state after unmount.
   const mounted = useRef(true);
@@ -74,8 +81,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(readCachedProfile(next.user.id));
     };
 
-    // Resolve the initial session. Offline with an expired token, Supabase
-    // reports none; fall back to the session saved on this device.
+    // Confirm the initial session in the background. Offline with an expired
+    // token, Supabase reports none; keep the session saved on this device.
+    // A revoked sign-in arrives as SIGNED_OUT below.
     supabase.auth
       .getSession()
       .then(({ data }) => {

@@ -169,6 +169,8 @@ export async function sendTestNotification(delayMs: number): Promise<'worker' | 
     title: 'Test: rest finished',
     body: 'Notifications are working.',
     url: '/timer?mode=rest',
+    // Show it even if the app is still on screen when it fires.
+    always: true,
   });
   timerLog.info('notify.test_scheduled', { via: ok ? 'worker' : 'page', delayMs });
   if (ok) return 'worker';

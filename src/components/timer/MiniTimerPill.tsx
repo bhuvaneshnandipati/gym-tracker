@@ -1,6 +1,8 @@
-import { Hourglass, Repeat, Timer as TimerIcon, X } from 'lucide-react';
+import { BellRing, Hourglass, Repeat, Timer as TimerIcon, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useRestNotifications } from '@/hooks/useRestNotifications';
 import { useTimerActions, useTimerState } from '@/hooks/useTimers';
+import { useToast } from '@/hooks/useToast';
 import { PHASE_LABELS, ceilSeconds, floorSeconds, formatTimer } from '@/lib/timerEngine';
 import { cn } from '@/utils/cn';
 
@@ -12,6 +14,8 @@ import { cn } from '@/utils/cn';
 export function MiniTimerPill() {
   const { state, restRemainingMs, stopwatchElapsedMs, interval } = useTimerState();
   const { resetRest } = useTimerActions();
+  const notifications = useRestNotifications();
+  const toast = useToast();
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
@@ -52,6 +56,15 @@ export function MiniTimerPill() {
 
   const Icon = icon;
   const spokenState = finished ? '' : paused ? ', paused' : '';
+  // While a rest runs with notifications off, offer them right here: rests are
+  // usually started from the workout editor, far from the Alerts settings.
+  const offerNotify = mode === 'rest' && rest.status === 'running' && notifications.canEnable;
+
+  const turnOnNotifications = async () => {
+    const result = await notifications.enable();
+    if (result === 'granted') toast.success("You'll get a notification when rest ends.");
+    else toast.error('Notifications are blocked for this site. Allow them in Chrome settings.');
+  };
 
   return (
     <div
@@ -67,7 +80,7 @@ export function MiniTimerPill() {
           finished
             ? 'border-green-300 bg-green-50/95 text-green-800 dark:border-green-800 dark:bg-green-950/90 dark:text-green-200'
             : 'border-iron-200 bg-white/95 text-iron-900 hover:bg-iron-50 dark:border-iron-700 dark:bg-iron-900/95 dark:text-iron-50 dark:hover:bg-iron-800',
-          mode === 'rest' && finished && 'rounded-r-none pr-3',
+          ((mode === 'rest' && finished) || offerNotify) && 'rounded-r-none pr-3',
         )}
       >
         <Icon
@@ -88,6 +101,17 @@ export function MiniTimerPill() {
           className="flex h-12 w-11 items-center justify-center rounded-r-full border border-l-0 border-green-300 bg-green-50/95 text-green-700 shadow-card hover:bg-green-100 dark:border-green-800 dark:bg-green-950/90 dark:text-green-300"
         >
           <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ) : null}
+      {offerNotify ? (
+        <button
+          type="button"
+          onClick={() => void turnOnNotifications()}
+          aria-label="Notify me when rest ends"
+          title="Notify me when rest ends"
+          className="flex h-12 w-11 items-center justify-center rounded-r-full border border-l-0 border-iron-200 bg-white/95 text-flame-600 shadow-card hover:bg-iron-50 dark:border-iron-700 dark:bg-iron-900/95 dark:text-flame-500 dark:hover:bg-iron-800"
+        >
+          <BellRing className="h-4 w-4" aria-hidden="true" />
         </button>
       ) : null}
     </div>

@@ -6,8 +6,9 @@
  *    page sends its end time here; the worker holds the timer (kept alive with
  *    event.waitUntil, which browsers honour for a few minutes) and shows the
  *    notification itself, unless the app is on screen at that moment.
- *    Messages: { type: 'rest:schedule', id, at, title, body, url } and
- *    { type: 'rest:cancel' }.
+ *    Messages: { type: 'rest:schedule', id, at, title, body, url, always } and
+ *    { type: 'rest:cancel' }. `always: true` (the test notification) shows it
+ *    even when the app is on screen, so a test never silently does nothing.
  * 2. Tapping a timer notification focuses an open app window, or opens the timer.
  */
 const REST_TAG = 'gym-tracker-rest';
@@ -27,7 +28,7 @@ async function anyWindowVisible() {
 
 async function fireRest(msg) {
   // On screen, the page plays its own sound and vibration instead.
-  if (await anyWindowVisible()) return;
+  if (!msg.always && (await anyWindowVisible())) return;
   const existing = await self.registration.getNotifications({ tag: REST_TAG });
   if (existing.some((n) => n.data && n.data.restId === msg.id)) return;
   await self.registration.showNotification(msg.title || 'Rest finished', {

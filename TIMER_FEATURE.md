@@ -51,7 +51,7 @@ The **Alerts** card on the Timer page has four saved settings:
 | Sound | On | Beeps described above. |
 | Vibration | On | Buzzes on the same events. Greyed out where unsupported (iPhone Safari). |
 | Keep screen on | On | Holds a screen wake lock while any timer runs, so the phone doesn't dim or lock mid-rest and the alert plays on time. Released as soon as nothing is running. No permission prompt. |
-| Rest notifications | Off | When rest ends while you're in another app or tab, shows a system notification ("Rest finished — Time for your next set."). Turning it on asks for notification permission once. Tapping the notification brings the app back. The notification clears itself when you return. **Send test notification (10s)** lets you lock the phone and confirm it works. If permission is removed in phone settings, the card says so. |
+| Rest notifications | Off | When rest ends while you're in another app or tab, shows a system notification ("Rest finished — Time for your next set."). Turning it on asks for notification permission once. Tapping the notification brings the app back. The notification clears itself when you return. **Send test notification (10s)** also turns the setting on, and the test always shows, even if the app is still on screen. If permission is removed in phone settings, the card says so. While a rest runs with notifications off, a bell button on the floating timer pill and a **Notify me when rest ends** button on the Rest tab turn them on in one tap. |
 
 ---
 
@@ -154,6 +154,7 @@ No database migration is needed: `workouts.duration_seconds` already exists.
 
 ## Known limitations
 - **Phone locked by hand:** *Keep screen on* stops the phone locking itself, but if you press the power button, iOS (and some Android power modes) suspend the page, including audio, so a beep due while locked may not play. The timer is still correct the moment you return. Some battery-saver modes also refuse the wake lock.
+- **Switching apps on Android:** Android freezes a backgrounded Chrome about 10 seconds after you leave it (the "cached apps freezer"), which pauses both the page and its service worker, so a rest that ends while you're in another app may only notify when you come back. Locking the phone with the app open is not affected the same way. Only a push sent from a server (Web Push) wakes Chrome reliably.
 - **Rest notifications** use the service-worker backup timer, which browsers keep alive for a few minutes: reliable on Android Chrome for rests up to about 5 minutes. Longer rests, battery saver, "Do not disturb" or the browser being force-closed can still hold one back. The web has no way to schedule an OS alarm. iPhone needs the app added to the Home Screen (iOS 16.4+), and you install it as a PWA.
 - **Vibration** isn't available in iPhone Safari (no Web Vibration API).
 - Changing the device clock while a timer runs shifts it (see *Accuracy*).

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { BellRing } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/hooks/useToast';
@@ -7,34 +7,23 @@ import { Switch } from '@/components/timer/TimerControls';
 import { useTimerActions, useTimerState } from '@/hooks/useTimers';
 import { isVibrationSupported, playCueNow, vibrate } from '@/lib/timerSound';
 import { isWakeLockSupported } from '@/lib/wakeLock';
-import {
-  notificationPermission,
-  requestNotificationPermission,
-  sendTestNotification,
-  watchNotificationPermission,
-  type NotifyPermission,
-} from '@/lib/timerNotify';
+import { useRestNotifications } from '@/hooks/useRestNotifications';
+import { sendTestNotification } from '@/lib/timerNotify';
 
 /** Sound, vibration, keep-awake and notification preferences for the timers. */
 export function TimerAlertsCard() {
   const { state } = useTimerState();
   const { updateSettings } = useTimerActions();
   const { settings } = state;
-  const [permission, setPermission] = useState<NotifyPermission>(notificationPermission);
+  const { permission, enable } = useRestNotifications();
   const [testing, setTesting] = useState(false);
   const toast = useToast();
 
-  // Permission can be granted or revoked in system settings while the app is
-  // in the background; re-check whenever the user comes back.
-  useEffect(() => watchNotificationPermission(setPermission), []);
-
   const TEST_DELAY_S = 10;
   const sendTest = async () => {
-    let current = permission;
-    if (current !== 'granted') {
-      current = await requestNotificationPermission();
-      setPermission(current);
-    }
+    // Testing also turns rest notifications on, so a passing test means real
+    // rests will notify too.
+    const current = await enable();
     if (current !== 'granted') {
       toast.error('Notifications are not allowed for this site.');
       return;
@@ -43,7 +32,7 @@ export function TimerAlertsCard() {
     const via = await sendTestNotification(TEST_DELAY_S * 1000);
     toast.info(
       via === 'worker'
-        ? `Lock your phone or switch apps now. A test notification arrives in ${TEST_DELAY_S} seconds.`
+        ? `A test notification arrives in ${TEST_DELAY_S} seconds. Lock your phone now to check it reaches you there.`
         : `A test notification arrives in ${TEST_DELAY_S} seconds. Keep this tab open (background alerts need the installed app).`,
     );
     window.setTimeout(() => setTesting(false), TEST_DELAY_S * 1000);
@@ -68,9 +57,7 @@ export function TimerAlertsCard() {
       updateSettings({ notifications: false });
       return;
     }
-    const result = await requestNotificationPermission();
-    setPermission(result);
-    updateSettings({ notifications: result === 'granted' });
+    await enable();
   };
 
   return (

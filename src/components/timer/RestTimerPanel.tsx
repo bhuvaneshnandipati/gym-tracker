@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
-import { Minus, Pause, Play, Plus, RotateCcw } from 'lucide-react';
+import { BellRing, Minus, Pause, Play, Plus, RotateCcw } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { BigButton } from '@/components/timer/TimerControls';
 import { TimerReadout } from '@/components/timer/TimerReadout';
+import { useRestNotifications } from '@/hooks/useRestNotifications';
 import { useTimerActions, useTimerState } from '@/hooks/useTimers';
 import {
   MAX_REST_SEC,
@@ -19,6 +20,7 @@ import { cn } from '@/utils/cn';
 export function RestTimerPanel() {
   const { state, restRemainingMs } = useTimerState();
   const actions = useTimerActions();
+  const notifications = useRestNotifications();
   const { rest } = state;
 
   const [minutes, setMinutes] = useState('');
@@ -105,6 +107,17 @@ export function RestTimerPanel() {
               <RotateCcw className="h-5 w-5" aria-hidden="true" />
               Stop
             </BigButton>
+            {notifications.canEnable ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="col-span-3"
+                onClick={() => void notifications.enable()}
+              >
+                <BellRing className="h-4 w-4" aria-hidden="true" />
+                Notify me when rest ends
+              </Button>
+            ) : null}
           </div>
         ) : (
           <div className="grid w-full max-w-md grid-cols-2 gap-3">
